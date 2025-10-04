@@ -126,7 +126,7 @@ const LoginScreen: React.FC = () => {
               transition: 'all 0.3s ease'
             }}
           >
-            {loading ? '⏳' : isLogin ? '🗡️ Enter the Realm' : '✨ Begin Adventure'}
+            {loading ? '⏳' : isLogin ? '🗡️ Sign In' : '✨ Create Account'}
           </button>
         </form>
 
