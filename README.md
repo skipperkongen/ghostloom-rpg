@@ -58,6 +58,43 @@ A mystical role-playing site built with Vite + React and Supabase authentication
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 
+## 🚀 Deployment
+
+### Quick Build
+
+For a quick production build:
+
+```bash
+npm run build
+```
+
+The built files will be in the `dist/` directory, ready for deployment.
+
+### Automated Deployment Script
+
+Use the included deployment script for a complete build process:
+
+```bash
+./deploy.sh
+```
+
+This script will:
+- ✅ Check environment configuration
+- ✅ Install dependencies
+- ✅ Run linting
+- ✅ Build for production
+- ✅ Verify build output
+
+### DigitalOcean Deployment
+
+For detailed deployment instructions to DigitalOcean, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+**Quick DigitalOcean App Platform setup:**
+1. Connect your repository to DigitalOcean App Platform
+2. Set build command: `npm run build`
+3. Set output directory: `dist`
+4. Add environment variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+
 ## 🎨 Customization
 
 The app features a fantasy theme with:
