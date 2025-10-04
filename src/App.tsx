@@ -1,7 +1,7 @@
 import React from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
 import LoginScreen from './components/LoginScreen'
-import Dashboard from './components/Dashboard'
+import RPGGame from './components/RPGGame'
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth()
@@ -37,7 +37,7 @@ const AppContent: React.FC = () => {
     )
   }
 
-  return user ? <Dashboard /> : <LoginScreen />
+  return user ? <RPGGame /> : <LoginScreen />
 }
 
 const App: React.FC = () => {
