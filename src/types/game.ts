@@ -2,12 +2,23 @@ export interface Character {
   skill: number; // 1-6
 }
 
+export interface TurnRecord {
+  id: string;
+  intent: string;
+  roll: number;
+  success: boolean;
+  narratorText: string;
+  timestamp: Date;
+}
+
 export interface GameState {
   character: Character;
   successes: number;
   isGameComplete: boolean;
   currentScene: string;
   messages: GameMessage[];
+  pendingIntent: string | null;
+  turns: TurnRecord[];
 }
 
 export interface GameMessage {
@@ -22,10 +33,11 @@ export interface GameMessage {
   };
 }
 
-export interface GameAction {
-  type: 'player_action';
-  description: string;
-}
+// Pure reducer actions
+export type GameAction = 
+  | { type: 'INTENT_SUBMITTED'; intent: string }
+  | { type: 'ROLL_COMMITTED'; roll: number }
+  | { type: 'RESET' }
 
 export interface DiceRoll {
   dice: number;

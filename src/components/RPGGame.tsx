@@ -1,20 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useReducer } from 'react'
 import { useAuth } from '../lib/auth'
-import { GameState, GameMessage } from '../types/game'
 import { 
   createInitialGameState, 
-  performSkillCheck, 
-  generateAIResponse, 
-  isGameComplete,
-  generateCompletionMessage 
+  gameReducer,
+  rollD6
 } from '../lib/gameLogic'
 
 const RPGGame: React.FC = () => {
   const { user, signOut } = useAuth()
-  const [gameState, setGameState] = useState<GameState>(createInitialGameState())
-  const [inputValue, setInputValue] = useState('')
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [gameState, dispatch] = useReducer(gameReducer, createInitialGameState())
+  const [intentInput, setIntentInput] = useState('')
+  const [rollInput, setRollInput] = useState('')
+  const [usePhysicalRoll, setUsePhysicalRoll] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const rollInputRef = useRef<HTMLInputElement>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -32,78 +31,42 @@ const RPGGame: React.FC = () => {
     }
   }
 
-  const handlePlayerAction = async (action: string) => {
-    if (isProcessing || gameState.isGameComplete) return
-
-    setIsProcessing(true)
-
-    // Add player message
-    const playerMessage: GameMessage = {
-      id: `player-${Date.now()}`,
-      type: 'player',
-      content: action,
-      timestamp: new Date()
+  const handleIntentSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (intentInput.trim() && !gameState.isGameComplete) {
+      dispatch({ type: 'INTENT_SUBMITTED', intent: intentInput.trim() })
+      setIntentInput('')
+      // Focus roll input only if physical roll mode is enabled
+      if (usePhysicalRoll) {
+        setTimeout(() => rollInputRef.current?.focus(), 100)
+      }
     }
-
-    // Perform skill check
-    const rollResult = performSkillCheck(gameState.character.skill)
-    
-    // Generate AI response
-    const aiResponse = generateAIResponse(action, rollResult, gameState.currentScene)
-    
-    // Add AI message with roll result
-    const aiMessage: GameMessage = {
-      id: `ai-${Date.now()}`,
-      type: 'ai',
-      content: aiResponse,
-      timestamp: new Date(),
-      rollResult
-    }
-
-    // Update game state
-    const newSuccesses = rollResult.success ? gameState.successes + 1 : gameState.successes
-    const gameComplete = isGameComplete(newSuccesses)
-
-    setGameState(prev => ({
-      ...prev,
-      messages: [...prev.messages, playerMessage, aiMessage],
-      successes: newSuccesses,
-      isGameComplete: gameComplete
-    }))
-
-    // Add completion message if game is complete
-    if (gameComplete) {
-      setTimeout(() => {
-        const completionMessage: GameMessage = {
-          id: `completion-${Date.now()}`,
-          type: 'ai',
-          content: generateCompletionMessage(),
-          timestamp: new Date()
-        }
-        
-        setGameState(prev => ({
-          ...prev,
-          messages: [...prev.messages, completionMessage]
-        }))
-      }, 1000)
-    }
-
-    setIsProcessing(false)
-    setInputValue('')
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleRollSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (inputValue.trim()) {
-      handlePlayerAction(inputValue.trim())
+    const roll = parseInt(rollInput)
+    
+    if (gameState.pendingIntent && roll >= 1 && roll <= 6) {
+      dispatch({ type: 'ROLL_COMMITTED', roll })
+      setRollInput('')
+    }
+  }
+
+  const handleDefaultRoll = () => {
+    if (gameState.pendingIntent && !usePhysicalRoll) {
+      const roll = rollD6()
+      dispatch({ type: 'ROLL_COMMITTED', roll })
+      setRollInput('')
     }
   }
 
   const resetGame = () => {
-    setGameState(createInitialGameState())
-    setInputValue('')
-    setIsProcessing(false)
+    dispatch({ type: 'RESET' })
+    setIntentInput('')
+    setRollInput('')
   }
+
 
   return (
     <div style={{ 
@@ -227,74 +190,175 @@ const RPGGame: React.FC = () => {
               </div>
             </div>
           ))}
-          {isProcessing && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              color: 'rgba(255, 255, 255, 0.6)',
-              fontStyle: 'italic'
-            }}>
-              <div style={{
-                width: '20px',
-                height: '20px',
-                border: '2px solid rgba(255, 215, 0, 0.3)',
-                borderTop: '2px solid #ffd700',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }} />
-              The AI Gamemaster is thinking...
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Form */}
+        {/* Two-Step Input Form */}
         {!gameState.isGameComplete && (
-          <form onSubmit={handleSubmit} style={{
+          <div style={{
             borderTop: '1px solid rgba(255, 255, 255, 0.1)',
             padding: '1.5rem',
             display: 'flex',
+            flexDirection: 'column',
             gap: '1rem'
           }}>
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Describe your action (e.g., 'I try to hack the terminal')"
-              disabled={isProcessing}
-              style={{
-                flex: 1,
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                borderRadius: '8px',
-                padding: '0.75rem 1rem',
-                color: 'white',
-                fontSize: '1rem'
-              }}
-            />
-            <button
-              type="submit"
-              disabled={isProcessing || !inputValue.trim()}
-              style={{
-                background: isProcessing || !inputValue.trim() 
-                  ? 'rgba(255, 255, 255, 0.1)' 
-                  : 'rgba(78, 205, 196, 0.2)',
-                border: `1px solid ${isProcessing || !inputValue.trim() 
-                  ? 'rgba(255, 255, 255, 0.2)' 
-                  : 'rgba(78, 205, 196, 0.5)'}`,
-                color: isProcessing || !inputValue.trim() 
-                  ? 'rgba(255, 255, 255, 0.4)' 
-                  : '#4ecdc4',
-                padding: '0.75rem 1.5rem',
-                fontSize: '1rem',
-                borderRadius: '8px',
-                cursor: isProcessing || !inputValue.trim() ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isProcessing ? '⏳' : '🎲 Roll'}
-            </button>
-          </form>
+            {/* Step 1: Intent Input */}
+            <form onSubmit={handleIntentSubmit} style={{
+              display: 'flex',
+              gap: '1rem',
+              alignItems: 'center'
+            }}>
+              <input
+                type="text"
+                value={intentInput}
+                onChange={(e) => setIntentInput(e.target.value)}
+                placeholder="Describe your action (e.g., 'I try to hack the terminal')"
+                disabled={gameState.isGameComplete}
+                style={{
+                  flex: 1,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  color: 'white',
+                  fontSize: '1rem'
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!intentInput.trim() || gameState.isGameComplete}
+                style={{
+                  background: !intentInput.trim() || gameState.isGameComplete
+                    ? 'rgba(255, 255, 255, 0.1)' 
+                    : 'rgba(78, 205, 196, 0.2)',
+                  border: `1px solid ${!intentInput.trim() || gameState.isGameComplete
+                    ? 'rgba(255, 255, 255, 0.2)' 
+                    : 'rgba(78, 205, 196, 0.5)'}`,
+                  color: !intentInput.trim() || gameState.isGameComplete
+                    ? 'rgba(255, 255, 255, 0.4)' 
+                    : '#4ecdc4',
+                  padding: '0.75rem 1.5rem',
+                  fontSize: '1rem',
+                  borderRadius: '8px',
+                  cursor: !intentInput.trim() || gameState.isGameComplete ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Submit Intent
+              </button>
+            </form>
+
+            {/* Step 2: Roll Action */}
+            {gameState.pendingIntent && (
+              <div style={{
+                display: 'flex',
+                gap: '1rem',
+                alignItems: 'center',
+                padding: '1rem',
+                background: 'rgba(255, 215, 0, 0.1)',
+                border: '1px solid rgba(255, 215, 0, 0.3)',
+                borderRadius: '8px'
+              }}>
+                <div style={{ color: '#ffd700', fontWeight: 'bold' }}>
+                  Pending: "{gameState.pendingIntent}"
+                </div>
+                
+                {/* Default RNG Roll Button */}
+                {!usePhysicalRoll && (
+                  <button
+                    type="button"
+                    onClick={handleDefaultRoll}
+                    disabled={gameState.isGameComplete}
+                    style={{
+                      background: gameState.isGameComplete
+                        ? 'rgba(255, 255, 255, 0.1)' 
+                        : 'rgba(78, 205, 196, 0.2)',
+                      border: `1px solid ${gameState.isGameComplete
+                        ? 'rgba(255, 255, 255, 0.2)' 
+                        : 'rgba(78, 205, 196, 0.5)'}`,
+                      color: gameState.isGameComplete
+                        ? 'rgba(255, 255, 255, 0.4)' 
+                        : '#4ecdc4',
+                      padding: '0.75rem 1.5rem',
+                      fontSize: '1rem',
+                      borderRadius: '8px',
+                      cursor: gameState.isGameComplete ? 'not-allowed' : 'pointer',
+                      marginLeft: 'auto'
+                    }}
+                  >
+                    🎲 Roll Dice
+                  </button>
+                )}
+
+                {/* Physical Roll Input */}
+                {usePhysicalRoll && (
+                  <div style={{ flex: 1, display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      ref={rollInputRef}
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={rollInput}
+                      onChange={(e) => setRollInput(e.target.value)}
+                      placeholder="1-6"
+                      disabled={gameState.isGameComplete}
+                      style={{
+                        width: '80px',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        borderRadius: '8px',
+                        padding: '0.5rem',
+                        color: 'white',
+                        fontSize: '1rem',
+                        textAlign: 'center'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRollSubmit}
+                      disabled={!rollInput || gameState.isGameComplete}
+                      style={{
+                        background: !rollInput || gameState.isGameComplete
+                          ? 'rgba(255, 255, 255, 0.1)' 
+                          : 'rgba(255, 215, 0, 0.2)',
+                        border: `1px solid ${!rollInput || gameState.isGameComplete
+                          ? 'rgba(255, 255, 255, 0.2)' 
+                          : 'rgba(255, 215, 0, 0.5)'}`,
+                        color: !rollInput || gameState.isGameComplete
+                          ? 'rgba(255, 255, 255, 0.4)' 
+                          : '#ffd700',
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.9rem',
+                        borderRadius: '8px',
+                        cursor: !rollInput || gameState.isGameComplete ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Submit Roll
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Physical Roll Toggle - Only show when there's a pending intent */}
+            {gameState.pendingIntent && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.9rem',
+                color: 'rgba(255, 255, 255, 0.7)'
+              }}>
+                <input
+                  type="checkbox"
+                  id="usePhysicalRoll"
+                  checked={usePhysicalRoll}
+                  onChange={(e) => setUsePhysicalRoll(e.target.checked)}
+                  style={{ margin: 0 }}
+                />
+                <label htmlFor="usePhysicalRoll">Use Physical Dice</label>
+              </div>
+            )}
+          </div>
         )}
 
         {gameState.isGameComplete && (
