@@ -67,7 +67,7 @@ This will serve the built files from `dist/` at `http://localhost:4173`
 
 2. **Configure the app:**
    - **Source Directory:** `/` (root)
-   - **Build Command:** `npm run build`
+   - **Build Command:** `./deploy.sh --platform`
    - **Output Directory:** `dist`
    - **Environment Variables:** Add your Supabase variables:
      - `VITE_SUPABASE_URL`
@@ -76,6 +76,7 @@ This will serve the built files from `dist/` at `http://localhost:4173`
 3. **Deploy:**
    - Click "Create Resources"
    - DigitalOcean will automatically build and deploy your app
+   - The `--platform` flag tells the deploy script to skip .env file checks and use platform environment variables
 
 ### Option 2: DigitalOcean Spaces + CDN
 
@@ -150,46 +151,32 @@ This will serve the built files from `dist/` at `http://localhost:4173`
 
 ## 🔧 Build Script for Automation
 
-Create a deployment script for easier builds:
+The project includes a deployment script (`deploy.sh`) that supports different deployment modes:
+
+### Usage Options:
 
 ```bash
-#!/bin/bash
-# deploy.sh
+# Local deployment (requires .env file)
+./deploy.sh
 
-echo "🚀 Starting Ghostloom deployment..."
+# DigitalOcean App Platform deployment (uses platform environment variables)
+./deploy.sh --platform
 
-# Check if .env exists
-if [ ! -f .env ]; then
-    echo "❌ Error: .env file not found!"
-    echo "Please copy env.example to .env and configure your Supabase credentials."
-    exit 1
-fi
+# Skip environment variable validation
+./deploy.sh --skip-env-check
 
-# Install dependencies
-echo "📦 Installing dependencies..."
-npm install
-
-# Run linting
-echo "🔍 Running linter..."
-npm run lint
-
-# Build for production
-echo "🏗️ Building for production..."
-npm run build
-
-# Check if build was successful
-if [ -d "dist" ]; then
-    echo "✅ Build successful! Files are in the dist/ directory."
-    echo "📁 Build size:"
-    du -sh dist/
-    echo ""
-    echo "🚀 Ready for deployment!"
-    echo "Upload the contents of the dist/ folder to your hosting provider."
-else
-    echo "❌ Build failed!"
-    exit 1
-fi
+# Show help
+./deploy.sh --help
 ```
+
+### Key Features:
+
+- ✅ **Flexible environment handling**: Works with both `.env` files and platform environment variables
+- ✅ **Automatic dependency installation**
+- ✅ **Linting with optional override**
+- ✅ **Production build optimization**
+- ✅ **Build size reporting**
+- ✅ **Deployment mode detection**
 
 Make it executable:
 ```bash
@@ -201,8 +188,10 @@ chmod +x deploy.sh
 ### Common Issues:
 
 1. **Environment variables not found:**
-   - Ensure `.env` file exists and contains `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+   - **For local deployment**: Ensure `.env` file exists and contains `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+   - **For platform deployment**: Set environment variables in DigitalOcean App Platform dashboard
    - Variables must start with `VITE_` to be accessible in the browser
+   - Use `./deploy.sh --platform` for DigitalOcean App Platform to skip .env file requirements
 
 2. **Build fails with TypeScript errors:**
    - Run `npm run lint` to check for issues
