@@ -1,5 +1,7 @@
 # ⚔️ Ghostloom - Role Playing Adventures
 
+> https://youtu.be/6eUL1Wo9ZRc?si=6GnKnOMUQIQsq7pj
+
 A mystical role-playing site built with Vite + React and Supabase authentication.
 
 ## ✨ Features
