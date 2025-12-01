@@ -1,0 +1,57 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (optional - remove if you want docs in container)
+*.md
+!README.md
+
+# Docker files themselves
+docker-compose.yml
+Dockerfile
+
+# CI/CD
+.github/
+
+# Testing (if not needed in container)
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
