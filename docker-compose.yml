@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - STATE_SECRET_KEY=${STATE_SECRET_KEY}
+      - LLM_API_KEY=${LLM_API_KEY}
