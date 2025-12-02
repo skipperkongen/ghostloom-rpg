@@ -1,0 +1,17 @@
+meta {
+  name: Init
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8000/session/init
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "seed": "A cool adventure in a cyberpunk city"
+  }
+}
