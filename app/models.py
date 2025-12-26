@@ -8,6 +8,7 @@ class InitSessionRequest(BaseModel):
     """Request to initialize a new story session."""
 
     seed: str = Field(..., description="User's initial story wish or prompt")
+    engine: str = Field("diceless", description='Story engine to use.')
 
 
 class SessionResponse(BaseModel):
