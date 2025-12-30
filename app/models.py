@@ -1,14 +1,22 @@
 """Pydantic models for request/response types."""
 
+from enum import Enum
 from typing import Any
 from pydantic import BaseModel, Field
+
+
+class StoryEngine(str, Enum):
+    """Story engine types."""
+
+    DICELESS = "diceless"
+    DND = "dnd"
 
 
 class InitSessionRequest(BaseModel):
     """Request to initialize a new story session."""
 
-    seed: str = Field(..., description="User's initial story wish or prompt")
-    engine: str = Field("diceless", description='Story engine to use.')
+    seed: str = Field(description="User's initial story wish or prompt")
+    engine: StoryEngine = Field(description='Story engine to use.')
 
 
 class SessionResponse(BaseModel):
@@ -16,7 +24,8 @@ class SessionResponse(BaseModel):
 
     session_id: str = Field(..., description="Unique session identifier")
     round: int = Field(..., description="Current round number")
-    state: str = Field(..., description="Opaque base64-encrypted state token")
+    state: str = Field(...,
+                       description="Opaque base64-encrypted state token")
     text: str = Field(..., description="Human-readable narrative text")
 
 
@@ -25,11 +34,12 @@ class StepRequest(BaseModel):
 
     session_id: str = Field(..., description="Session identifier")
     round: int = Field(..., description="Current round number")
-    state: str = Field(..., description="Opaque base64-encrypted state token")
+    state: str = Field(...,
+                       description="Opaque base64-encrypted state token")
     action: str = Field(..., description="User's free-text action")
 
 
-# Alias for consistency
+# Type aliases for consistency
 InitSessionResponse = SessionResponse
 StepResponse = SessionResponse
 
@@ -40,5 +50,6 @@ class InternalState(BaseModel):
     seed: str
     session_id: str
     round: int
+    engine: StoryEngine
     # Allow additional fields managed by LLM
     extra: dict[str, Any] = Field(default_factory=dict)

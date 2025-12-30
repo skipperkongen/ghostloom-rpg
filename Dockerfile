@@ -7,12 +7,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy project files
 COPY pyproject.toml ./
+COPY app/ ./app/
 
 # Install dependencies using uv (reads from pyproject.toml)
 RUN uv pip install --system --no-cache .
-
-# Copy application code
-COPY app/ ./app/
 
 # Expose port
 EXPOSE 8000
