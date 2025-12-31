@@ -5,16 +5,22 @@ meta {
 }
 
 post {
-  url: http://localhost:8000/session/step
+  url: http://localhost:8000/continue
   body: json
   auth: none
 }
 
 body:json {
   {
-    "session_id": "F4sLu6CIZhTjusF0BiJIkg",
-    "round": 0,
-    "state": "o9dPHqnIFdnFJfkvBXoXfJcNeOlwEWJJKiumbIAySsA78WNfuZ9Z5YrS2xUJQaNn_oSCorGUm_xg1VnHazgxDSnnerfvYMJymopCbU9es1mNb5kcNcC7Cvqg_RXtXFP4JFkTdRAPLAs5VaHO4w7lo5hWgssAst0DbMZtOw8qPGcAI7NtowtUoUHo9aU77smub44mri7-43dl-K5uzhbr23R1-wB365rglpeluJs8uHi19Lk95e7-ga7Omikdun1cHWpe66ozt_U9BWy_uhbAZT5CvU_tUnFR_Qt3skotBjSLWaazb27Ria7Amx_Dj0RQctzaj_7n-qgEmG689cbN96JbrDBSwhx8uzmhlk3cUglDQwvgJV3INKMNiyKbRmZYFTc71H7kEw75hfJWmunzjTqEzJ-BU7p9xs5n8vhyx2o=",
-    "action": "are a caca"
+    "story": {
+      "seed": "A cool adventure in a cyberpunk city",
+      "messages": [
+        {
+          "role": "narrator",
+          "text": "A cool adventure in a cyberpunk city\n\nThe story begins.\n\nWhat do you do?"
+        }
+      ]
+    },
+    "user_input": "I skip and jump"
   }
 }
