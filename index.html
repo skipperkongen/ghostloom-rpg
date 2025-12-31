@@ -378,7 +378,7 @@
             <div id="initSection" class="init-section">
                 <h2>Begin Your Story</h2>
                 <p>Describe the world or situation you'd like to explore...</p>
-                <input type="text" id="seedInput" class="seed-input" placeholder="e.g., You wake up in a mysterious forest..." autofocus>
+                <input type="text" id="seedInput" class="seed-input" placeholder="e.g., You wake up in a mysterious forest..." autofocus onkeypress="handleSeedKeyPress(event)">
                 <button id="startBtn" class="btn" onclick="startStory()">Start Story</button>
             </div>
 
@@ -432,6 +432,12 @@
 
         function showLoading(show) {
             document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function handleSeedKeyPress(event) {
+            if (event.key === 'Enter') {
+                startStory();
+            }
         }
 
         function handleKeyPress(event) {
