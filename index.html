@@ -355,6 +355,30 @@
             outline: none;
             border-color: #667eea;
         }
+
+        .reset-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .reset-btn {
+            width: 100%;
+            padding: 10px;
+            font-size: 0.9em;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: inherit;
+            font-weight: bold;
+        }
+
+        .reset-btn:hover {
+            background: #c82333;
+        }
     </style>
 </head>
 <body>
@@ -369,7 +393,10 @@
                 <div id="kebabDropdown" class="kebab-menu-dropdown">
                     <div class="api-url-section">
                         <label for="apiUrl">API Base URL:</label>
-                        <input type="text" id="apiUrl" class="api-url-input" value="http://localhost:8000" placeholder="http://localhost:8000">
+                        <input type="text" id="apiUrl" class="api-url-input" placeholder="http://localhost:8000">
+                    </div>
+                    <div class="reset-section">
+                        <button class="reset-btn" onclick="resetStory()">Reset Story</button>
                     </div>
                 </div>
             </div>
@@ -401,7 +428,64 @@
     </div>
 
     <script>
+        const STORAGE_KEY = 'ghostloom_story';
+        const STORAGE_SUGGESTIONS_KEY = 'ghostloom_suggestions';
+        const STORAGE_API_URL_KEY = 'ghostloom_api_url';
         let currentStory = null;
+
+        // LocalStorage functions
+        function saveStory(story, suggestions) {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(story));
+                if (suggestions) {
+                    localStorage.setItem(STORAGE_SUGGESTIONS_KEY, JSON.stringify(suggestions));
+                }
+            } catch (e) {
+                console.warn('Failed to save story to localStorage:', e);
+            }
+        }
+
+        function loadStory() {
+            try {
+                const storyJson = localStorage.getItem(STORAGE_KEY);
+                const suggestionsJson = localStorage.getItem(STORAGE_SUGGESTIONS_KEY);
+                
+                if (storyJson) {
+                    const story = JSON.parse(storyJson);
+                    const suggestions = suggestionsJson ? JSON.parse(suggestionsJson) : null;
+                    return { story, suggestions };
+                }
+            } catch (e) {
+                console.warn('Failed to load story from localStorage:', e);
+            }
+            return null;
+        }
+
+        function clearStory() {
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+                localStorage.removeItem(STORAGE_SUGGESTIONS_KEY);
+            } catch (e) {
+                console.warn('Failed to clear story from localStorage:', e);
+            }
+        }
+
+        function saveApiUrl(url) {
+            try {
+                localStorage.setItem(STORAGE_API_URL_KEY, url);
+            } catch (e) {
+                console.warn('Failed to save API URL to localStorage:', e);
+            }
+        }
+
+        function loadApiUrl() {
+            try {
+                return localStorage.getItem(STORAGE_API_URL_KEY) || 'http://localhost:8000';
+            } catch (e) {
+                console.warn('Failed to load API URL from localStorage:', e);
+                return 'http://localhost:8000';
+            }
+        }
 
         function toggleKebabMenu() {
             const dropdown = document.getElementById('kebabDropdown');
@@ -417,8 +501,22 @@
             }
         });
 
+        function resetStory() {
+            if (confirm('Are you sure you want to reset the story? This will clear all progress.')) {
+                clearStory();
+                currentStory = null;
+                document.getElementById('initSection').style.display = 'block';
+                document.getElementById('storySection').classList.remove('active');
+                document.getElementById('seedInput').value = '';
+                document.getElementById('seedInput').focus();
+                document.getElementById('kebabDropdown').classList.remove('active');
+            }
+        }
+
         function getApiUrl() {
-            return document.getElementById('apiUrl').value.trim() || 'http://localhost:8000';
+            const url = document.getElementById('apiUrl').value.trim() || 'http://localhost:8000';
+            saveApiUrl(url);
+            return url;
         }
 
         function showError(message) {
@@ -473,6 +571,9 @@
                 const data = await response.json();
                 currentStory = data.story;
                 
+                // Save to localStorage
+                saveStory(data.story, data.suggestions);
+                
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
                 
@@ -522,6 +623,9 @@
 
                 const data = await response.json();
                 currentStory = data.story;
+                
+                // Save to localStorage
+                saveStory(data.story, data.suggestions);
                 
                 displayMessages(data.story.messages);
                 displaySuggestions(data.suggestions);
@@ -589,6 +693,31 @@
             
             suggestionsDiv.appendChild(buttonsDiv);
         }
+
+        // Load story and API URL from localStorage on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            // Load API URL
+            const savedApiUrl = loadApiUrl();
+            const apiUrlInput = document.getElementById('apiUrl');
+            apiUrlInput.value = savedApiUrl;
+            
+            // Save API URL when it changes
+            apiUrlInput.addEventListener('change', function() {
+                saveApiUrl(this.value.trim() || 'http://localhost:8000');
+            });
+            
+            // Load story
+            const saved = loadStory();
+            if (saved && saved.story) {
+                currentStory = saved.story;
+                document.getElementById('initSection').style.display = 'none';
+                document.getElementById('storySection').classList.add('active');
+                displayMessages(saved.story.messages);
+                if (saved.suggestions) {
+                    displaySuggestions(saved.suggestions);
+                }
+            }
+        });
     </script>
 </body>
 </html>
