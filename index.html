@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ghostloom - Interactive Story Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .init-section {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .init-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .init-section p {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .seed-input {
+            width: 100%;
+            max-width: 600px;
+            padding: 15px 20px;
+            font-size: 1.1em;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .seed-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-family: inherit;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .story-section {
+            display: none;
+        }
+
+        .story-section.active {
+            display: block;
+        }
+
+        .messages {
+            margin-bottom: 30px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.narrator {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border-left: 4px solid #667eea;
+        }
+
+        .message.user {
+            background: #e9ecef;
+            border-left: 4px solid #6c757d;
+            margin-left: 40px;
+        }
+
+        .message-role {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #667eea;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .message.user .message-role {
+            color: #6c757d;
+        }
+
+        .message-text {
+            color: #333;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            font-size: 1.05em;
+        }
+
+        .input-section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .input-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .user-input {
+            flex: 1;
+            padding: 15px 20px;
+            font-size: 1.1em;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .user-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .suggestions {
+            margin-top: 20px;
+        }
+
+        .suggestions h4 {
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 1em;
+            font-weight: normal;
+        }
+
+        .suggestion-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .suggestion-btn {
+            background: #f8f9fa;
+            color: #667eea;
+            border: 2px solid #667eea;
+            padding: 10px 20px;
+            font-size: 0.95em;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .suggestion-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-style: italic;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c33;
+        }
+
+        .api-url-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .api-url-section label {
+            display: block;
+            color: #666;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .api-url-input {
+            width: 100%;
+            padding: 10px;
+            font-size: 0.95em;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✨ Ghostloom</h1>
+            <p>Interactive Story Adventure</p>
+        </div>
+        <div class="content">
+            <div class="api-url-section">
+                <label for="apiUrl">API Base URL:</label>
+                <input type="text" id="apiUrl" class="api-url-input" value="http://localhost:8000" placeholder="http://localhost:8000">
+            </div>
+
+            <div id="initSection" class="init-section">
+                <h2>Begin Your Story</h2>
+                <p>Describe the world or situation you'd like to explore...</p>
+                <input type="text" id="seedInput" class="seed-input" placeholder="e.g., You wake up in a mysterious forest..." autofocus>
+                <button id="startBtn" class="btn" onclick="startStory()">Start Story</button>
+            </div>
+
+            <div id="storySection" class="story-section">
+                <div id="messages" class="messages"></div>
+                <div id="error" class="error" style="display: none;"></div>
+                <div id="loading" class="loading" style="display: none;">Loading...</div>
+                <div class="input-section">
+                    <h3>What do you do?</h3>
+                    <div class="input-group">
+                        <input type="text" id="userInput" class="user-input" placeholder="Type your action..." onkeypress="handleKeyPress(event)">
+                        <button id="submitBtn" class="btn" onclick="continueStory()">Submit</button>
+                    </div>
+                    <div id="suggestions" class="suggestions"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStory = null;
+
+        function getApiUrl() {
+            return document.getElementById('apiUrl').value.trim() || 'http://localhost:8000';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                continueStory();
+            }
+        }
+
+        async function startStory() {
+            const seed = document.getElementById('seedInput').value.trim();
+            if (!seed) {
+                showError('Please enter a story seed to begin!');
+                return;
+            }
+
+            const apiUrl = getApiUrl();
+            showLoading(true);
+            document.getElementById('startBtn').disabled = true;
+
+            try {
+                const response = await fetch(`${apiUrl}/init`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ seed }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                currentStory = data.story;
+                
+                document.getElementById('initSection').style.display = 'none';
+                document.getElementById('storySection').classList.add('active');
+                
+                displayMessages(data.story.messages);
+                displaySuggestions(data.suggestions);
+            } catch (error) {
+                showError(`Failed to start story: ${error.message}`);
+                console.error('Error:', error);
+            } finally {
+                showLoading(false);
+                document.getElementById('startBtn').disabled = false;
+            }
+        }
+
+        async function continueStory() {
+            const userInput = document.getElementById('userInput').value.trim();
+            if (!userInput) {
+                showError('Please enter an action!');
+                return;
+            }
+
+            if (!currentStory) {
+                showError('No active story. Please start a new story.');
+                return;
+            }
+
+            const apiUrl = getApiUrl();
+            showLoading(true);
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('userInput').disabled = true;
+
+            try {
+                const response = await fetch(`${apiUrl}/continue`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        story: currentStory,
+                        user_input: userInput,
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                currentStory = data.story;
+                
+                displayMessages(data.story.messages);
+                displaySuggestions(data.suggestions);
+                
+                document.getElementById('userInput').value = '';
+            } catch (error) {
+                showError(`Failed to continue story: ${error.message}`);
+                console.error('Error:', error);
+            } finally {
+                showLoading(false);
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('userInput').disabled = false;
+                document.getElementById('userInput').focus();
+            }
+        }
+
+        function displayMessages(messages) {
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '';
+            
+            messages.forEach(message => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${message.role}`;
+                
+                const roleDiv = document.createElement('div');
+                roleDiv.className = 'message-role';
+                roleDiv.textContent = message.role === 'narrator' ? '📖 Narrator' : '👤 You';
+                
+                const textDiv = document.createElement('div');
+                textDiv.className = 'message-text';
+                textDiv.textContent = message.text;
+                
+                messageDiv.appendChild(roleDiv);
+                messageDiv.appendChild(textDiv);
+                messagesDiv.appendChild(messageDiv);
+            });
+            
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function displaySuggestions(suggestions) {
+            const suggestionsDiv = document.getElementById('suggestions');
+            
+            if (!suggestions || suggestions.length === 0) {
+                suggestionsDiv.innerHTML = '';
+                return;
+            }
+
+            suggestionsDiv.innerHTML = '<h4>Suggestions:</h4>';
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'suggestion-buttons';
+            
+            suggestions.forEach(suggestion => {
+                const button = document.createElement('button');
+                button.className = 'suggestion-btn';
+                button.textContent = `${suggestion.id}. ${suggestion.text}`;
+                button.onclick = () => {
+                    document.getElementById('userInput').value = suggestion.text;
+                    continueStory();
+                };
+                buttonsDiv.appendChild(button);
+            });
+            
+            suggestionsDiv.appendChild(buttonsDiv);
+        }
+    </script>
+</body>
+</html>
