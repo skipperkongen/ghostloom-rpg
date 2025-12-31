@@ -37,8 +37,16 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 15px 30px;
-            text-align: center;
             flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .header-title {
+            flex: 1;
+            text-align: left;
         }
 
         .header h1 {
@@ -277,42 +285,96 @@
             border-left: 4px solid #c33;
         }
 
-        .api-url-section {
-            background: #f8f9fa;
-            padding: 15px;
+        .kebab-menu {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .kebab-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5em;
+            cursor: pointer;
+            padding: 5px 10px;
+            border-radius: 5px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+        }
+
+        .kebab-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .kebab-menu-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 10px;
+            background: white;
             border-radius: 10px;
-            margin-bottom: 20px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            min-width: 300px;
+            z-index: 1000;
+        }
+
+        .kebab-menu-dropdown.active {
+            display: block;
+        }
+
+        .api-url-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         .api-url-section label {
-            display: block;
-            color: #666;
-            margin-bottom: 8px;
+            color: #333;
             font-size: 0.9em;
+            font-weight: bold;
         }
 
         .api-url-input {
             width: 100%;
-            padding: 10px;
-            font-size: 0.95em;
-            border: 1px solid #ddd;
+            padding: 8px 12px;
+            font-size: 0.9em;
+            border: 2px solid #ddd;
             border-radius: 5px;
             font-family: monospace;
+            background: white;
+            color: #333;
+        }
+
+        .api-url-input:focus {
+            outline: none;
+            border-color: #667eea;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>✨ Ghostloom</h1>
-            <p>Interactive Story Adventure</p>
+            <div class="header-title">
+                <h1>✨ Ghostloom</h1>
+                <p>Interactive Story Adventure</p>
+            </div>
+            <div class="kebab-menu">
+                <button class="kebab-btn" onclick="toggleKebabMenu()" aria-label="Menu">⋮</button>
+                <div id="kebabDropdown" class="kebab-menu-dropdown">
+                    <div class="api-url-section">
+                        <label for="apiUrl">API Base URL:</label>
+                        <input type="text" id="apiUrl" class="api-url-input" value="http://localhost:8000" placeholder="http://localhost:8000">
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="content">
-            <div class="api-url-section">
-                <label for="apiUrl">API Base URL:</label>
-                <input type="text" id="apiUrl" class="api-url-input" value="http://localhost:8000" placeholder="http://localhost:8000">
-            </div>
-
             <div id="initSection" class="init-section">
                 <h2>Begin Your Story</h2>
                 <p>Describe the world or situation you'd like to explore...</p>
@@ -340,6 +402,20 @@
 
     <script>
         let currentStory = null;
+
+        function toggleKebabMenu() {
+            const dropdown = document.getElementById('kebabDropdown');
+            dropdown.classList.toggle('active');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const kebabMenu = document.querySelector('.kebab-menu');
+            const dropdown = document.getElementById('kebabDropdown');
+            if (kebabMenu && !kebabMenu.contains(event.target) && dropdown.classList.contains('active')) {
+                dropdown.classList.remove('active');
+            }
+        });
 
         function getApiUrl() {
             return document.getElementById('apiUrl').value.trim() || 'http://localhost:8000';
