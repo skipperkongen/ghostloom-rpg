@@ -667,6 +667,44 @@
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
+        /**
+         * Rolls dice based on dice roll specifications.
+         * @param {Array} diceRolls - Array of {count: number, faces: number} objects
+         * @returns {string} Formatted string with dice roll results (e.g., "Rolled: 2d6=[3,5]=8, 1d20=[15]=15")
+         */
+        function rollDice(diceRolls) {
+            if (!diceRolls || diceRolls.length === 0) {
+                return '';
+            }
+
+            const results = [];
+            let total = 0;
+
+            diceRolls.forEach(diceRoll => {
+                const { count, faces } = diceRoll;
+                const rolls = [];
+                let groupTotal = 0;
+
+                for (let i = 0; i < count; i++) {
+                    const roll = Math.floor(Math.random() * faces) + 1;
+                    rolls.push(roll);
+                    groupTotal += roll;
+                }
+
+                total += groupTotal;
+                const diceNotation = `${count}d${faces}`;
+                const rollString = rolls.length > 1
+                    ? `${diceNotation}=[${rolls.join(',')}]=${groupTotal}`
+                    : `${diceNotation}=${groupTotal}`;
+                results.push(rollString);
+            });
+
+            const resultString = results.join(', ');
+            return diceRolls.length > 1
+                ? `Rolled: ${resultString} (Total: ${total})`
+                : `Rolled: ${resultString}`;
+        }
+
         function displaySuggestions(suggestions) {
             const suggestionsDiv = document.getElementById('suggestions');
 
@@ -683,8 +721,17 @@
                 const button = document.createElement('button');
                 button.className = 'suggestion-btn';
                 button.textContent = `${suggestion.id}. ${suggestion.text}`;
+
                 button.onclick = () => {
-                    document.getElementById('userInput').value = suggestion.text;
+                    let inputText = suggestion.text;
+
+                    // If dice rolls are present, roll them and append results
+                    if (suggestion.dice_rolls && suggestion.dice_rolls.length > 0) {
+                        const diceResult = rollDice(suggestion.dice_rolls);
+                        inputText = `${suggestion.text} (${diceResult})`;
+                    }
+
+                    document.getElementById('userInput').value = inputText;
                     continueStory();
                 };
                 buttonsDiv.appendChild(button);
