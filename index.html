@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -161,6 +162,7 @@
                 opacity: 0;
                 transform: translateY(10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -381,6 +383,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -405,7 +408,9 @@
             <div id="initSection" class="init-section">
                 <h2>Begin Your Story</h2>
                 <p>Describe the world or situation you'd like to explore...</p>
-                <input type="text" id="seedInput" class="seed-input" placeholder="e.g., You wake up in a mysterious forest..." autofocus onkeypress="handleSeedKeyPress(event)">
+                <input type="text" id="seedInput" class="seed-input"
+                    placeholder="e.g., You wake up in a mysterious forest..." autofocus
+                    onkeypress="handleSeedKeyPress(event)">
                 <button id="startBtn" class="btn" onclick="startStory()">Start Story</button>
             </div>
 
@@ -416,9 +421,10 @@
                     <div id="messages" class="messages"></div>
                 </div>
                 <div class="input-section">
-                    <h3>What do you do?</h3>
+                    <h3 id="latestNarration">What do you do?</h3>
                     <div class="input-group">
-                        <input type="text" id="userInput" class="user-input" placeholder="Type your action..." onkeypress="handleKeyPress(event)">
+                        <input type="text" id="userInput" class="user-input" placeholder="Type your action..."
+                            onkeypress="handleKeyPress(event)">
                         <button id="submitBtn" class="btn" onclick="continueStory()">Submit</button>
                     </div>
                     <div id="suggestions" class="suggestions"></div>
@@ -449,7 +455,7 @@
             try {
                 const storyJson = localStorage.getItem(STORAGE_KEY);
                 const suggestionsJson = localStorage.getItem(STORAGE_SUGGESTIONS_KEY);
-                
+
                 if (storyJson) {
                     const story = JSON.parse(storyJson);
                     const suggestions = suggestionsJson ? JSON.parse(suggestionsJson) : null;
@@ -493,7 +499,7 @@
         }
 
         // Close dropdown when clicking outside
-        document.addEventListener('click', function(event) {
+        document.addEventListener('click', function (event) {
             const kebabMenu = document.querySelector('.kebab-menu');
             const dropdown = document.getElementById('kebabDropdown');
             if (kebabMenu && !kebabMenu.contains(event.target) && dropdown.classList.contains('active')) {
@@ -570,13 +576,13 @@
 
                 const data = await response.json();
                 currentStory = data.story;
-                
+
                 // Save to localStorage
                 saveStory(data.story, data.suggestions);
-                
+
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
-                
+
                 displayMessages(data.story.messages);
                 displaySuggestions(data.suggestions);
             } catch (error) {
@@ -623,13 +629,13 @@
 
                 const data = await response.json();
                 currentStory = data.story;
-                
+
                 // Save to localStorage
                 saveStory(data.story, data.suggestions);
-                
+
                 displayMessages(data.story.messages);
                 displaySuggestions(data.suggestions);
-                
+
                 document.getElementById('userInput').value = '';
             } catch (error) {
                 showError(`Failed to continue story: ${error.message}`);
@@ -642,27 +648,56 @@
             }
         }
 
+        function updateLatestNarration(messages) {
+            const narrationElement = document.getElementById('latestNarration');
+            // Find the last narrator message
+            const narratorMessages = messages.filter(m => m.role === 'narrator');
+            if (narratorMessages.length > 0) {
+                const latestNarration = narratorMessages[narratorMessages.length - 1].text;
+                narrationElement.textContent = latestNarration;
+            } else {
+                narrationElement.textContent = 'What do you do?';
+            }
+        }
+
         function displayMessages(messages) {
             const messagesDiv = document.getElementById('messages');
             messagesDiv.innerHTML = '';
-            
-            messages.forEach(message => {
+
+            // Find the index of the last narrator message to exclude it from display
+            let lastNarratorIndex = -1;
+            for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === 'narrator') {
+                    lastNarratorIndex = i;
+                    break;
+                }
+            }
+
+            // Filter out the last narrator message from display
+            const messagesToDisplay = messages.filter((message, index) => {
+                return index !== lastNarratorIndex;
+            });
+
+            messagesToDisplay.forEach(message => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${message.role}`;
-                
+
                 const roleDiv = document.createElement('div');
                 roleDiv.className = 'message-role';
                 roleDiv.textContent = message.role === 'narrator' ? '📖 Narrator' : '👤 You';
-                
+
                 const textDiv = document.createElement('div');
                 textDiv.className = 'message-text';
                 textDiv.textContent = message.text;
-                
+
                 messageDiv.appendChild(roleDiv);
                 messageDiv.appendChild(textDiv);
                 messagesDiv.appendChild(messageDiv);
             });
-            
+
+            // Update the latest narration display
+            updateLatestNarration(messages);
+
             // Scroll to bottom of messages container
             const messagesContainer = messagesDiv.parentElement;
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -670,7 +705,7 @@
 
         function displaySuggestions(suggestions) {
             const suggestionsDiv = document.getElementById('suggestions');
-            
+
             if (!suggestions || suggestions.length === 0) {
                 suggestionsDiv.innerHTML = '';
                 return;
@@ -679,7 +714,7 @@
             suggestionsDiv.innerHTML = '<h4>Suggestions:</h4>';
             const buttonsDiv = document.createElement('div');
             buttonsDiv.className = 'suggestion-buttons';
-            
+
             suggestions.forEach(suggestion => {
                 const button = document.createElement('button');
                 button.className = 'suggestion-btn';
@@ -690,22 +725,22 @@
                 };
                 buttonsDiv.appendChild(button);
             });
-            
+
             suggestionsDiv.appendChild(buttonsDiv);
         }
 
         // Load story and API URL from localStorage on page load
-        window.addEventListener('DOMContentLoaded', function() {
+        window.addEventListener('DOMContentLoaded', function () {
             // Load API URL
             const savedApiUrl = loadApiUrl();
             const apiUrlInput = document.getElementById('apiUrl');
             apiUrlInput.value = savedApiUrl;
-            
+
             // Save API URL when it changes
-            apiUrlInput.addEventListener('change', function() {
+            apiUrlInput.addEventListener('change', function () {
                 saveApiUrl(this.value.trim() || 'http://localhost:8000');
             });
-            
+
             // Load story
             const saved = loadStory();
             if (saved && saved.story) {
@@ -720,4 +755,5 @@
         });
     </script>
 </body>
+
 </html>

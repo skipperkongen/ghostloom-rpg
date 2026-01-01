@@ -1,5 +1,6 @@
 """LLM client abstraction with stub implementation."""
 
+import random
 from abc import ABC, abstractmethod
 
 from app.models import Story, Message, Suggestion
@@ -50,7 +51,7 @@ def suggest_for_seed(seed: str) -> list[Suggestion]:
 def suggest_for_input(user_input: str) -> list[Suggestion]:
     # A few generic next moves.
     return make_suggestions(
-        ["Proceed cautiously", "Ask a question", "Change your approach"]
+        ["Proceed cautiously", "Ask a question", "Change my approach"]
     )
 
 
@@ -60,7 +61,10 @@ class SimpleNarrator(Narrator):
     """
 
     def init_story(self, seed: str) -> Story:
-        opening = f"{seed.strip()}\n\nThe story begins.\n\nWhat do you do?"
+        random_num = random.randint(1, 9999)
+        opening = (
+            f"[{random_num}] {seed.strip()}\n\nThe story begins.\n\nWhat do you do?"
+        )
 
         return Story(
             seed=seed,
@@ -74,8 +78,9 @@ class SimpleNarrator(Narrator):
         messages.append(Message(role="user", text=input))
 
         # very simple continuation logic
+        random_num = random.randint(1, 9999)
         assistant_text = (
-            f"You decide to {input.strip()}.\n\n"
+            f"[{random_num}] You decide to {input.strip()}.\n\n"
             "The world responds to your action.\n\n"
             "What do you do next?"
         )
