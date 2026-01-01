@@ -209,12 +209,6 @@
             border-top: 1px solid #e9ecef;
         }
 
-        .input-section h3 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 1.3em;
-        }
-
         .input-group {
             display: flex;
             gap: 10px;
@@ -421,7 +415,6 @@
                     <div id="messages" class="messages"></div>
                 </div>
                 <div class="input-section">
-                    <h3 id="latestNarration">What do you do?</h3>
                     <div class="input-group">
                         <input type="text" id="userInput" class="user-input" placeholder="Type your action..."
                             onkeypress="handleKeyPress(event)">
@@ -648,37 +641,11 @@
             }
         }
 
-        function updateLatestNarration(messages) {
-            const narrationElement = document.getElementById('latestNarration');
-            // Find the last narrator message
-            const narratorMessages = messages.filter(m => m.role === 'narrator');
-            if (narratorMessages.length > 0) {
-                const latestNarration = narratorMessages[narratorMessages.length - 1].text;
-                narrationElement.textContent = latestNarration;
-            } else {
-                narrationElement.textContent = 'What do you do?';
-            }
-        }
-
         function displayMessages(messages) {
             const messagesDiv = document.getElementById('messages');
             messagesDiv.innerHTML = '';
 
-            // Find the index of the last narrator message to exclude it from display
-            let lastNarratorIndex = -1;
-            for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === 'narrator') {
-                    lastNarratorIndex = i;
-                    break;
-                }
-            }
-
-            // Filter out the last narrator message from display
-            const messagesToDisplay = messages.filter((message, index) => {
-                return index !== lastNarratorIndex;
-            });
-
-            messagesToDisplay.forEach(message => {
+            messages.forEach(message => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${message.role}`;
 
@@ -694,9 +661,6 @@
                 messageDiv.appendChild(textDiv);
                 messagesDiv.appendChild(messageDiv);
             });
-
-            // Update the latest narration display
-            updateLatestNarration(messages);
 
             // Scroll to bottom of messages container
             const messagesContainer = messagesDiv.parentElement;
