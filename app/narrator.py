@@ -67,7 +67,7 @@ def suggest_for_seed(seed: str) -> list[Suggestion]:
         ]
         dice_rolls = random.choice(dice_options)
         return make_dice_suggestion(dice_rolls)
-    
+
     # Otherwise return normal suggestions
     return make_suggestions(["Look around", "Move forward", "Call out"])
 
@@ -84,7 +84,7 @@ def suggest_for_input(user_input: str) -> list[Suggestion]:
         ]
         dice_rolls = random.choice(dice_options)
         return make_dice_suggestion(dice_rolls)
-    
+
     # Otherwise return normal suggestions
     return make_suggestions(
         ["Proceed cautiously", "Ask a question", "Change my approach"]
@@ -140,7 +140,7 @@ class SimpleNarrator(Narrator):
             ]
         else:
             contexts = [f"Roll {dice_notation}"]
-        
+
         return random.choice(contexts)
 
     def transition(self, story: Story, input: str) -> Story:
@@ -151,40 +151,40 @@ class SimpleNarrator(Narrator):
 
         # Check if dice were rolled (look for "Rolled:" pattern)
         dice_rolled = "Rolled:" in input
-        
+
         # very simple continuation logic
         random_num = random.randint(1, 9999)
-        
+
         if dice_rolled:
             # Extract dice roll results from the formatted string
             # Format: "1d20 (Rolled: 1d20=15)" or "2d6 (Rolled: 2d6=[3,5]=8, 1d20=[15]=15 (Total: 23))"
-            total_match = re.search(r'\(Total: (\d+)\)', input)
+            total_match = re.search(r"\(Total: (\d+)\)", input)
             if total_match:
                 roll_result = total_match.group(1)
                 roll_description = f"a total of {roll_result}"
             else:
                 # Try to extract individual roll results
-                roll_matches = re.findall(r'=\[?(\d+(?:,\d+)*)\]?=(\d+)', input)
+                roll_matches = re.findall(r"=\[?(\d+(?:,\d+)*)\]?=(\d+)", input)
                 if roll_matches:
                     # Get the last total from the matches
                     roll_result = roll_matches[-1][1]
                     roll_description = roll_result
                 else:
                     # Fallback: extract any number after "Rolled:"
-                    simple_match = re.search(r'Rolled:.*?=(\d+)', input)
+                    simple_match = re.search(r"Rolled:.*?=(\d+)", input)
                     roll_result = simple_match.group(1) if simple_match else "unknown"
                     roll_description = roll_result
-            
+
             # Extract the dice notation (before the dice roll annotation)
             # Format: "1d20 (Rolled: ...)" -> "1d20"
-            dice_notation = re.sub(r'\s*\(Rolled:.*?\)\s*$', '', input).strip()
+            dice_notation = re.sub(r"\s*\(Rolled:.*?\)\s*$", "", input).strip()
             if not dice_notation or dice_notation == input:
                 # Fallback if regex didn't match
-                dice_notation = input.split('(Rolled:')[0].strip()
-            
+                dice_notation = input.split("(Rolled:")[0].strip()
+
             # Get contextual text for the dice roll
             context = self._get_dice_roll_context(dice_notation)
-            
+
             assistant_text = (
                 f"[{random_num}] {context}.\n\n"
                 f"The dice land showing {roll_description}. The outcome of your roll becomes clear.\n\n"
