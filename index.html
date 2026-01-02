@@ -265,6 +265,66 @@
             transform: translateY(-2px);
         }
 
+        .dice-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        .dice-box {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2em;
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            position: relative;
+            animation: diceRoll 0.6s ease-in-out;
+        }
+
+        @keyframes diceRoll {
+
+            0%,
+            100% {
+                transform: rotate(0deg) scale(1);
+            }
+
+            25% {
+                transform: rotate(90deg) scale(1.1);
+            }
+
+            50% {
+                transform: rotate(180deg) scale(1);
+            }
+
+            75% {
+                transform: rotate(270deg) scale(1.1);
+            }
+        }
+
+        .dice-box.rolling {
+            animation: diceRoll 0.3s infinite;
+        }
+
+        .dice-box.result {
+            animation: none;
+            transform: scale(1.2);
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+
+        .dice-label {
+            text-align: center;
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+
         .loading {
             text-align: center;
             padding: 20px;
@@ -594,8 +654,10 @@
                 displayMessages(data.story.messages);
                 if (data.next_action === "choose") {
                     displaySuggestions(data.suggestions);
+                    updateInputPlaceholder("Type your action...");
                 } else if (data.next_action === "roll") {
                     displayDiceRolls(data.dice_rolls);
+                    updateInputPlaceholder("Type your roll or use the button below");
                 }
             } catch (error) {
                 showError(`Failed to start story: ${error.message}`);
@@ -617,6 +679,9 @@
                 showError('No active story. Please start a new story.');
                 return;
             }
+
+            // Clear the input field immediately after capturing the value
+            document.getElementById('userInput').value = '';
 
             const apiUrl = getApiUrl();
             showLoading(true);
@@ -648,11 +713,13 @@
                 displayMessages(data.story.messages);
                 if (data.next_action === "choose") {
                     displaySuggestions(data.suggestions);
+                    updateInputPlaceholder("Type your action...");
                 } else if (data.next_action === "roll") {
                     displayDiceRolls(data.dice_rolls);
+                    updateInputPlaceholder("Type your roll or use the button below");
                 }
 
-                document.getElementById('userInput').value = '';
+                // Input field already cleared at submission time
             } catch (error) {
                 showError(`Failed to continue story: ${error.message}`);
                 console.error('Error:', error);
@@ -755,6 +822,60 @@
             suggestionsDiv.appendChild(buttonsDiv);
         }
 
+        function updateInputPlaceholder(text) {
+            const userInput = document.getElementById('userInput');
+            userInput.placeholder = text;
+        }
+
+        function animateDiceRoll(dice_rolls, callback) {
+            const suggestionsDiv = document.getElementById('suggestions');
+
+            // Remove any existing dice animation containers
+            const existingContainers = suggestionsDiv.querySelectorAll('.dice-animation-container');
+            existingContainers.forEach(container => container.remove());
+
+            // Create a container for the animation
+            const animationContainer = document.createElement('div');
+            animationContainer.className = 'dice-animation-container';
+            animationContainer.style.marginTop = '20px';
+
+            const diceContainer = document.createElement('div');
+            diceContainer.className = 'dice-container';
+
+            // Create dice boxes for each die
+            const allDice = [];
+            dice_rolls.forEach((diceRoll, groupIndex) => {
+                for (let i = 0; i < diceRoll.count; i++) {
+                    const diceBox = document.createElement('div');
+                    diceBox.className = 'dice-box rolling';
+                    diceBox.textContent = '🎲';
+                    diceContainer.appendChild(diceBox);
+                    allDice.push({ box: diceBox, faces: diceRoll.faces });
+                }
+            });
+
+            animationContainer.appendChild(diceContainer);
+            suggestionsDiv.appendChild(animationContainer);
+
+            // Animate for 1.5 seconds, then show results
+            setTimeout(() => {
+                const results = [];
+                allDice.forEach(({ box, faces }) => {
+                    const roll = Math.floor(Math.random() * faces) + 1;
+                    box.classList.remove('rolling');
+                    box.classList.add('result');
+                    box.textContent = roll;
+                    results.push(roll);
+                });
+
+                // After showing results, execute callback
+                // Keep the dice results visible - don't remove the container
+                setTimeout(() => {
+                    callback(results, dice_rolls);
+                }, 500);
+            }, 1500);
+        }
+
         function displayDiceRolls(dice_rolls) {
             const suggestionsDiv = document.getElementById('suggestions');
 
@@ -763,26 +884,118 @@
                 return;
             }
 
-            suggestionsDiv.innerHTML = '<h4>Dice Rolls:</h4>';
-            const buttonsDiv = document.createElement('div');
-            buttonsDiv.className = 'suggestion-buttons';
-
             // Format dice notation (e.g., "1d20" or "2d6 + 1d20")
             const diceNotation = dice_rolls.map(dr => `${dr.count}d${dr.faces}`).join(' + ');
 
+            // Create roll button
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'suggestion-buttons';
+
             const button = document.createElement('button');
             button.className = 'suggestion-btn';
-            button.textContent = `🎲 ${diceNotation}`;
+            button.textContent = `🎲 Roll ${diceNotation}`;
 
             button.onclick = () => {
-                const diceResult = rollDice(dice_rolls);
-                const inputText = `${diceNotation} (${diceResult})`;
-                document.getElementById('userInput').value = inputText;
-                continueStory();
+                // Remove any existing dice results before starting new roll
+                const suggestionsDiv = document.getElementById('suggestions');
+                const existingContainers = suggestionsDiv.querySelectorAll('.dice-animation-container');
+                existingContainers.forEach(container => container.remove());
+
+                // Disable button during animation
+                button.disabled = true;
+                button.textContent = 'Rolling...';
+
+                // Animate dice roll
+                animateDiceRoll(dice_rolls, (results, dice_rolls) => {
+                    // Calculate the formatted result in prose-like format
+                    const inputText = formatDiceProse(results, dice_rolls);
+
+                    // Fill in the input field
+                    document.getElementById('userInput').value = inputText;
+
+                    // Re-enable button and change text
+                    button.disabled = false;
+                    button.textContent = `🎲 Roll ${diceNotation}`;
+
+                    // Focus on input field so user can see the result and click submit
+                    document.getElementById('userInput').focus();
+                    // Don't auto-submit - let user click submit manually
+                });
             };
             buttonsDiv.appendChild(button);
 
+            suggestionsDiv.innerHTML = '<h4>Dice Rolls:</h4>';
             suggestionsDiv.appendChild(buttonsDiv);
+        }
+
+        function formatDiceResult(results, dice_rolls) {
+            let resultIndex = 0;
+            const formattedResults = [];
+            let total = 0;
+
+            dice_rolls.forEach((diceRoll) => {
+                const groupResults = results.slice(resultIndex, resultIndex + diceRoll.count);
+                const groupTotal = groupResults.reduce((sum, r) => sum + r, 0);
+                total += groupTotal;
+
+                const diceNotation = `${diceRoll.count}d${diceRoll.faces}`;
+                if (diceRoll.count === 1) {
+                    formattedResults.push(`${diceNotation}=${groupTotal}`);
+                } else {
+                    formattedResults.push(`${diceNotation}=[${groupResults.join(',')}]=${groupTotal}`);
+                }
+
+                resultIndex += diceRoll.count;
+            });
+
+            if (dice_rolls.length > 1 || dice_rolls[0].count > 1) {
+                return `Rolled: ${formattedResults.join(', ')} (Total: ${total})`;
+            } else {
+                return `Rolled: ${formattedResults[0]}`;
+            }
+        }
+
+        function formatDiceProse(results, dice_rolls) {
+            let resultIndex = 0;
+            const parts = [];
+            let total = 0;
+
+            dice_rolls.forEach((diceRoll) => {
+                const groupResults = results.slice(resultIndex, resultIndex + diceRoll.count);
+                const groupTotal = groupResults.reduce((sum, r) => sum + r, 0);
+                total += groupTotal;
+
+                const diceNotation = `${diceRoll.count}d${diceRoll.faces}`;
+
+                if (diceRoll.count === 1) {
+                    // Single die: "rolled a 1d20 and got 15"
+                    parts.push(`rolled a ${diceNotation} and got ${groupTotal}`);
+                } else {
+                    // Multiple dice: "rolled 2d6 getting 3 and 5 for 8"
+                    const rollsText = groupResults.join(' and ');
+                    parts.push(`rolled ${diceNotation} getting ${rollsText} for ${groupTotal}`);
+                }
+
+                resultIndex += diceRoll.count;
+            });
+
+            // Combine all parts with proper prose
+            if (parts.length === 1) {
+                // Single roll group
+                if (dice_rolls[0].count === 1) {
+                    return `I ${parts[0]}`;
+                } else {
+                    return `I ${parts[0]}`;
+                }
+            } else {
+                // Multiple roll groups: "I rolled 2d6 getting 3 and 5 for 8, and a 1d20 getting 15, for a total of 23"
+                const lastPart = parts.pop();
+                let prose = `I ${parts.join(', ')}, and ${lastPart}`;
+                if (total > 0 && (dice_rolls.length > 1 || dice_rolls.some(dr => dr.count > 1))) {
+                    prose += `, for a total of ${total}`;
+                }
+                return prose;
+            }
         }
 
         // Load story and API URL from localStorage on page load
@@ -806,8 +1019,10 @@
                 displayMessages(saved.story.messages);
                 if (saved.next_action === "choose" && saved.suggestions) {
                     displaySuggestions(saved.suggestions);
+                    updateInputPlaceholder("Type your action...");
                 } else if (saved.next_action === "roll" && saved.dice_rolls) {
                     displayDiceRolls(saved.dice_rolls);
+                    updateInputPlaceholder("Type your roll or use the button below");
                 }
             }
         });
