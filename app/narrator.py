@@ -42,20 +42,20 @@ def make_suggestions(texts: list[str]) -> list[Suggestion]:
     return [Suggestion(id=ids[i], text=text) for i, text in enumerate(texts)]
 
 
-def format_dice_notation(dice_rolls: list[DiceRoll]) -> str:
-    """Format dice rolls as notation string, e.g., '1d20' or '2d6 + 1d20'."""
-    return " + ".join(f"{dr.count}d{dr.faces}" for dr in dice_rolls)
-
-
-def make_dice_suggestion(dice_rolls: list[DiceRoll]) -> list[Suggestion]:
-    """Create a single suggestion with dice rolls. Text is just the dice notation."""
-    dice_text = format_dice_notation(dice_rolls)
-    return [Suggestion(id="🎲", text=dice_text, dice_rolls=dice_rolls)]
+def make_dice_suggestion(dice_rolls: list[DiceRoll]) -> list[DiceRoll]:
+    """Return dice rolls for the response."""
+    return dice_rolls
 
 
 # Optional: extremely simple suggestion heuristics.
 # Keeps "canon" out of the story transcript.
-def suggest_for_seed(seed: str) -> list[Suggestion]:
+def suggest_for_seed(
+    seed: str,
+) -> tuple[list[Suggestion] | None, list[DiceRoll] | None]:
+    """
+    Return either suggestions or dice_rolls, but not both.
+    Returns (suggestions, dice_rolls) where exactly one is not None.
+    """
     # Sometimes return a dice roll suggestion (30% chance)
     if random.random() < 0.3:
         # Common RPG dice combinations
@@ -66,13 +66,28 @@ def suggest_for_seed(seed: str) -> list[Suggestion]:
             [DiceRoll(count=3, faces=6)],
         ]
         dice_rolls = random.choice(dice_options)
-        return make_dice_suggestion(dice_rolls)
+        return (None, dice_rolls)
 
     # Otherwise return normal suggestions
-    return make_suggestions(["Look around", "Move forward", "Call out"])
+    return (make_suggestions(["Look around", "Move forward", "Call out"]), None)
 
 
-def suggest_for_input(user_input: str) -> list[Suggestion]:
+def suggest_for_input(
+    user_input: str,
+) -> tuple[list[Suggestion] | None, list[DiceRoll] | None]:
+    """
+    Return either suggestions or dice_rolls, but not both.
+    Returns (suggestions, dice_rolls) where exactly one is not None.
+    """
+    # If the user just rolled dice, always return suggestions (not more dice rolls)
+    if "Rolled:" in user_input:
+        return (
+            make_suggestions(
+                ["Proceed cautiously", "Ask a question", "Change my approach"]
+            ),
+            None,
+        )
+
     # Sometimes return a dice roll suggestion (30% chance)
     if random.random() < 0.3:
         # Common RPG dice combinations
@@ -83,11 +98,14 @@ def suggest_for_input(user_input: str) -> list[Suggestion]:
             [DiceRoll(count=1, faces=100)],
         ]
         dice_rolls = random.choice(dice_options)
-        return make_dice_suggestion(dice_rolls)
+        return (None, dice_rolls)
 
     # Otherwise return normal suggestions
-    return make_suggestions(
-        ["Proceed cautiously", "Ask a question", "Change my approach"]
+    return (
+        make_suggestions(
+            ["Proceed cautiously", "Ask a question", "Change my approach"]
+        ),
+        None,
     )
 
 

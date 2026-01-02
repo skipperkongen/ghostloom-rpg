@@ -1,6 +1,5 @@
-"""Protocol models for API request/response types."""
-
-from pydantic import BaseModel, Field
+from typing import Literal
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.story import Story
 
@@ -15,25 +14,36 @@ class ContinueStoryRequest(BaseModel):
 
 
 class DiceRoll(BaseModel):
-    """Represents a single dice roll specification."""
-
-    count: int = Field(gt=0, description="Number of dice to roll")
-    faces: int = Field(
-        gt=0, description="Number of faces on each die (e.g., 4, 6, 8, 10, 12, 20, 100)"
-    )
+    count: int = Field(gt=0)
+    faces: int = Field(gt=0)
 
 
 class Suggestion(BaseModel):
     id: str
     text: str
-    dice_rolls: list[DiceRoll] | None = Field(
-        default=None,
-        description="Optional list of dice rolls requested for this suggestion. "
-        "Each entry specifies a count and number of faces, allowing for "
-        "complex combinations like 2d6 + 1d20 in a single request.",
-    )
 
 
 class StoryResponse(BaseModel):
     story: Story
+    next_action: Literal["choose", "roll"]
+
     suggestions: list[Suggestion] | None = None
+    dice_rolls: list[DiceRoll] | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_payload(self) -> "StoryResponse":
+        has_suggestions = self.suggestions is not None
+        has_dice = self.dice_rolls is not None
+
+        if has_suggestions == has_dice:
+            raise ValueError(
+                "Exactly one of 'suggestions' or 'dice_rolls' must be set."
+            )
+
+        if self.next_action == "choose" and not has_suggestions:
+            raise ValueError("next_action='choose' requires 'suggestions' to be set.")
+
+        if self.next_action == "roll" and not has_dice:
+            raise ValueError("next_action='roll' requires 'dice_rolls' to be set.")
+
+        return self

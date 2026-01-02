@@ -433,11 +433,23 @@
         let currentStory = null;
 
         // LocalStorage functions
-        function saveStory(story, suggestions) {
+        function saveStory(story, suggestions, dice_rolls, next_action) {
             try {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(story));
                 if (suggestions) {
                     localStorage.setItem(STORAGE_SUGGESTIONS_KEY, JSON.stringify(suggestions));
+                } else {
+                    localStorage.removeItem(STORAGE_SUGGESTIONS_KEY);
+                }
+                if (dice_rolls) {
+                    localStorage.setItem('story_dice_rolls', JSON.stringify(dice_rolls));
+                } else {
+                    localStorage.removeItem('story_dice_rolls');
+                }
+                if (next_action) {
+                    localStorage.setItem('story_next_action', next_action);
+                } else {
+                    localStorage.removeItem('story_next_action');
                 }
             } catch (e) {
                 console.warn('Failed to save story to localStorage:', e);
@@ -448,11 +460,14 @@
             try {
                 const storyJson = localStorage.getItem(STORAGE_KEY);
                 const suggestionsJson = localStorage.getItem(STORAGE_SUGGESTIONS_KEY);
+                const diceRollsJson = localStorage.getItem('story_dice_rolls');
+                const nextAction = localStorage.getItem('story_next_action');
 
                 if (storyJson) {
                     const story = JSON.parse(storyJson);
                     const suggestions = suggestionsJson ? JSON.parse(suggestionsJson) : null;
-                    return { story, suggestions };
+                    const dice_rolls = diceRollsJson ? JSON.parse(diceRollsJson) : null;
+                    return { story, suggestions, dice_rolls, next_action: nextAction };
                 }
             } catch (e) {
                 console.warn('Failed to load story from localStorage:', e);
@@ -571,13 +586,17 @@
                 currentStory = data.story;
 
                 // Save to localStorage
-                saveStory(data.story, data.suggestions);
+                saveStory(data.story, data.suggestions, data.dice_rolls, data.next_action);
 
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
 
                 displayMessages(data.story.messages);
-                displaySuggestions(data.suggestions);
+                if (data.next_action === "choose") {
+                    displaySuggestions(data.suggestions);
+                } else if (data.next_action === "roll") {
+                    displayDiceRolls(data.dice_rolls);
+                }
             } catch (error) {
                 showError(`Failed to start story: ${error.message}`);
                 console.error('Error:', error);
@@ -624,10 +643,14 @@
                 currentStory = data.story;
 
                 // Save to localStorage
-                saveStory(data.story, data.suggestions);
+                saveStory(data.story, data.suggestions, data.dice_rolls, data.next_action);
 
                 displayMessages(data.story.messages);
-                displaySuggestions(data.suggestions);
+                if (data.next_action === "choose") {
+                    displaySuggestions(data.suggestions);
+                } else if (data.next_action === "roll") {
+                    displayDiceRolls(data.dice_rolls);
+                }
 
                 document.getElementById('userInput').value = '';
             } catch (error) {
@@ -723,19 +746,41 @@
                 button.textContent = `${suggestion.id}. ${suggestion.text}`;
 
                 button.onclick = () => {
-                    let inputText = suggestion.text;
-
-                    // If dice rolls are present, roll them and append results
-                    if (suggestion.dice_rolls && suggestion.dice_rolls.length > 0) {
-                        const diceResult = rollDice(suggestion.dice_rolls);
-                        inputText = `${suggestion.text} (${diceResult})`;
-                    }
-
-                    document.getElementById('userInput').value = inputText;
+                    document.getElementById('userInput').value = suggestion.text;
                     continueStory();
                 };
                 buttonsDiv.appendChild(button);
             });
+
+            suggestionsDiv.appendChild(buttonsDiv);
+        }
+
+        function displayDiceRolls(dice_rolls) {
+            const suggestionsDiv = document.getElementById('suggestions');
+
+            if (!dice_rolls || dice_rolls.length === 0) {
+                suggestionsDiv.innerHTML = '';
+                return;
+            }
+
+            suggestionsDiv.innerHTML = '<h4>Dice Rolls:</h4>';
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'suggestion-buttons';
+
+            // Format dice notation (e.g., "1d20" or "2d6 + 1d20")
+            const diceNotation = dice_rolls.map(dr => `${dr.count}d${dr.faces}`).join(' + ');
+
+            const button = document.createElement('button');
+            button.className = 'suggestion-btn';
+            button.textContent = `🎲 ${diceNotation}`;
+
+            button.onclick = () => {
+                const diceResult = rollDice(dice_rolls);
+                const inputText = `${diceNotation} (${diceResult})`;
+                document.getElementById('userInput').value = inputText;
+                continueStory();
+            };
+            buttonsDiv.appendChild(button);
 
             suggestionsDiv.appendChild(buttonsDiv);
         }
@@ -759,8 +804,10 @@
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
                 displayMessages(saved.story.messages);
-                if (saved.suggestions) {
+                if (saved.next_action === "choose" && saved.suggestions) {
                     displaySuggestions(saved.suggestions);
+                } else if (saved.next_action === "roll" && saved.dice_rolls) {
+                    displayDiceRolls(saved.dice_rolls);
                 }
             }
         });
