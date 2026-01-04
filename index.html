@@ -265,65 +265,6 @@
             transform: translateY(-2px);
         }
 
-        .dice-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            justify-content: center;
-            margin: 20px 0;
-        }
-
-        .dice-box {
-            width: 80px;
-            height: 80px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2em;
-            color: white;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            position: relative;
-            animation: diceRoll 0.6s ease-in-out;
-        }
-
-        @keyframes diceRoll {
-
-            0%,
-            100% {
-                transform: rotate(0deg) scale(1);
-            }
-
-            25% {
-                transform: rotate(90deg) scale(1.1);
-            }
-
-            50% {
-                transform: rotate(180deg) scale(1);
-            }
-
-            75% {
-                transform: rotate(270deg) scale(1.1);
-            }
-        }
-
-        .dice-box.rolling {
-            animation: diceRoll 0.3s infinite;
-        }
-
-        .dice-box.result {
-            animation: none;
-            transform: scale(1.2);
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-        }
-
-        .dice-label {
-            text-align: center;
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 5px;
-        }
 
         .loading {
             text-align: center;
@@ -480,7 +421,7 @@
                             onkeypress="handleKeyPress(event)">
                         <button id="submitBtn" class="btn" onclick="continueStory()">Submit</button>
                     </div>
-                    <div id="suggestions" class="suggestions"></div>
+                    <div id="choices" class="suggestions"></div>
                 </div>
             </div>
         </div>
@@ -488,28 +429,18 @@
 
     <script>
         const STORAGE_KEY = 'ghostloom_story';
-        const STORAGE_SUGGESTIONS_KEY = 'ghostloom_suggestions';
+        const STORAGE_CHOICES_KEY = 'ghostloom_choices';
         const STORAGE_API_URL_KEY = 'ghostloom_api_url';
         let currentStory = null;
 
         // LocalStorage functions
-        function saveStory(story, suggestions, dice_rolls, next_action) {
+        function saveStory(story, choices) {
             try {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(story));
-                if (suggestions) {
-                    localStorage.setItem(STORAGE_SUGGESTIONS_KEY, JSON.stringify(suggestions));
+                if (choices && choices.length > 0) {
+                    localStorage.setItem(STORAGE_CHOICES_KEY, JSON.stringify(choices));
                 } else {
-                    localStorage.removeItem(STORAGE_SUGGESTIONS_KEY);
-                }
-                if (dice_rolls) {
-                    localStorage.setItem('story_dice_rolls', JSON.stringify(dice_rolls));
-                } else {
-                    localStorage.removeItem('story_dice_rolls');
-                }
-                if (next_action) {
-                    localStorage.setItem('story_next_action', next_action);
-                } else {
-                    localStorage.removeItem('story_next_action');
+                    localStorage.removeItem(STORAGE_CHOICES_KEY);
                 }
             } catch (e) {
                 console.warn('Failed to save story to localStorage:', e);
@@ -519,15 +450,12 @@
         function loadStory() {
             try {
                 const storyJson = localStorage.getItem(STORAGE_KEY);
-                const suggestionsJson = localStorage.getItem(STORAGE_SUGGESTIONS_KEY);
-                const diceRollsJson = localStorage.getItem('story_dice_rolls');
-                const nextAction = localStorage.getItem('story_next_action');
+                const choicesJson = localStorage.getItem(STORAGE_CHOICES_KEY);
 
                 if (storyJson) {
                     const story = JSON.parse(storyJson);
-                    const suggestions = suggestionsJson ? JSON.parse(suggestionsJson) : null;
-                    const dice_rolls = diceRollsJson ? JSON.parse(diceRollsJson) : null;
-                    return { story, suggestions, dice_rolls, next_action: nextAction };
+                    const choices = choicesJson ? JSON.parse(choicesJson) : null;
+                    return { story, choices };
                 }
             } catch (e) {
                 console.warn('Failed to load story from localStorage:', e);
@@ -538,7 +466,7 @@
         function clearStory() {
             try {
                 localStorage.removeItem(STORAGE_KEY);
-                localStorage.removeItem(STORAGE_SUGGESTIONS_KEY);
+                localStorage.removeItem(STORAGE_CHOICES_KEY);
             } catch (e) {
                 console.warn('Failed to clear story from localStorage:', e);
             }
@@ -646,18 +574,14 @@
                 currentStory = data.story;
 
                 // Save to localStorage
-                saveStory(data.story, data.suggestions, data.dice_rolls, data.next_action);
+                saveStory(data.story, data.choices);
 
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
 
-                displayMessages(data.story.messages);
-                if (data.next_action === "choose") {
-                    displaySuggestions(data.suggestions);
-                    updateInputPlaceholder("Type your action...");
-                } else if (data.next_action === "roll") {
-                    displayDiceRolls(data.dice_rolls);
-                    updateInputPlaceholder("Type your roll or use the button below");
+                displayBeats(data.story.beats);
+                if (data.choices && data.choices.length > 0) {
+                    displayChoices(data.choices);
                 }
             } catch (error) {
                 showError(`Failed to start story: ${error.message}`);
@@ -708,15 +632,11 @@
                 currentStory = data.story;
 
                 // Save to localStorage
-                saveStory(data.story, data.suggestions, data.dice_rolls, data.next_action);
+                saveStory(data.story, data.choices);
 
-                displayMessages(data.story.messages);
-                if (data.next_action === "choose") {
-                    displaySuggestions(data.suggestions);
-                    updateInputPlaceholder("Type your action...");
-                } else if (data.next_action === "roll") {
-                    displayDiceRolls(data.dice_rolls);
-                    updateInputPlaceholder("Type your roll or use the button below");
+                displayBeats(data.story.beats);
+                if (data.choices && data.choices.length > 0) {
+                    displayChoices(data.choices);
                 }
 
                 // Input field already cleared at submission time
@@ -731,21 +651,21 @@
             }
         }
 
-        function displayMessages(messages) {
+        function displayBeats(beats) {
             const messagesDiv = document.getElementById('messages');
             messagesDiv.innerHTML = '';
 
-            messages.forEach(message => {
+            beats.forEach(beat => {
                 const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${message.role}`;
+                messageDiv.className = `message ${beat.role}`;
 
                 const roleDiv = document.createElement('div');
                 roleDiv.className = 'message-role';
-                roleDiv.textContent = message.role === 'narrator' ? '📖 Narrator' : '👤 You';
+                roleDiv.textContent = beat.role === 'narrator' ? '📖 Narrator' : '👤 You';
 
                 const textDiv = document.createElement('div');
                 textDiv.className = 'message-text';
-                textDiv.textContent = message.text;
+                textDiv.textContent = beat.text;
 
                 messageDiv.appendChild(roleDiv);
                 messageDiv.appendChild(textDiv);
@@ -757,245 +677,31 @@
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
-        /**
-         * Rolls dice based on dice roll specifications.
-         * @param {Array} diceRolls - Array of {count: number, faces: number} objects
-         * @returns {string} Formatted string with dice roll results (e.g., "Rolled: 2d6=[3,5]=8, 1d20=[15]=15")
-         */
-        function rollDice(diceRolls) {
-            if (!diceRolls || diceRolls.length === 0) {
-                return '';
-            }
+        function displayChoices(choices) {
+            const choicesDiv = document.getElementById('choices');
 
-            const results = [];
-            let total = 0;
-
-            diceRolls.forEach(diceRoll => {
-                const { count, faces } = diceRoll;
-                const rolls = [];
-                let groupTotal = 0;
-
-                for (let i = 0; i < count; i++) {
-                    const roll = Math.floor(Math.random() * faces) + 1;
-                    rolls.push(roll);
-                    groupTotal += roll;
-                }
-
-                total += groupTotal;
-                const diceNotation = `${count}d${faces}`;
-                const rollString = rolls.length > 1
-                    ? `${diceNotation}=[${rolls.join(',')}]=${groupTotal}`
-                    : `${diceNotation}=${groupTotal}`;
-                results.push(rollString);
-            });
-
-            const resultString = results.join(', ');
-            return diceRolls.length > 1
-                ? `Rolled: ${resultString} (Total: ${total})`
-                : `Rolled: ${resultString}`;
-        }
-
-        function displaySuggestions(suggestions) {
-            const suggestionsDiv = document.getElementById('suggestions');
-
-            if (!suggestions || suggestions.length === 0) {
-                suggestionsDiv.innerHTML = '';
+            if (!choices || choices.length === 0) {
+                choicesDiv.innerHTML = '';
                 return;
             }
 
-            suggestionsDiv.innerHTML = '<h4>Suggestions:</h4>';
+            choicesDiv.innerHTML = '<h4>Choices:</h4>';
             const buttonsDiv = document.createElement('div');
             buttonsDiv.className = 'suggestion-buttons';
 
-            suggestions.forEach(suggestion => {
+            choices.forEach(choice => {
                 const button = document.createElement('button');
                 button.className = 'suggestion-btn';
-                button.textContent = `${suggestion.id}. ${suggestion.text}`;
+                button.textContent = choice.text;
 
                 button.onclick = () => {
-                    document.getElementById('userInput').value = suggestion.text;
+                    document.getElementById('userInput').value = choice.text;
                     continueStory();
                 };
                 buttonsDiv.appendChild(button);
             });
 
-            suggestionsDiv.appendChild(buttonsDiv);
-        }
-
-        function updateInputPlaceholder(text) {
-            const userInput = document.getElementById('userInput');
-            userInput.placeholder = text;
-        }
-
-        function animateDiceRoll(dice_rolls, callback) {
-            const suggestionsDiv = document.getElementById('suggestions');
-
-            // Remove any existing dice animation containers
-            const existingContainers = suggestionsDiv.querySelectorAll('.dice-animation-container');
-            existingContainers.forEach(container => container.remove());
-
-            // Create a container for the animation
-            const animationContainer = document.createElement('div');
-            animationContainer.className = 'dice-animation-container';
-            animationContainer.style.marginTop = '20px';
-
-            const diceContainer = document.createElement('div');
-            diceContainer.className = 'dice-container';
-
-            // Create dice boxes for each die
-            const allDice = [];
-            dice_rolls.forEach((diceRoll, groupIndex) => {
-                for (let i = 0; i < diceRoll.count; i++) {
-                    const diceBox = document.createElement('div');
-                    diceBox.className = 'dice-box rolling';
-                    diceBox.textContent = '🎲';
-                    diceContainer.appendChild(diceBox);
-                    allDice.push({ box: diceBox, faces: diceRoll.faces });
-                }
-            });
-
-            animationContainer.appendChild(diceContainer);
-            suggestionsDiv.appendChild(animationContainer);
-
-            // Animate for 1.5 seconds, then show results
-            setTimeout(() => {
-                const results = [];
-                allDice.forEach(({ box, faces }) => {
-                    const roll = Math.floor(Math.random() * faces) + 1;
-                    box.classList.remove('rolling');
-                    box.classList.add('result');
-                    box.textContent = roll;
-                    results.push(roll);
-                });
-
-                // After showing results, execute callback
-                // Keep the dice results visible - don't remove the container
-                setTimeout(() => {
-                    callback(results, dice_rolls);
-                }, 500);
-            }, 1500);
-        }
-
-        function displayDiceRolls(dice_rolls) {
-            const suggestionsDiv = document.getElementById('suggestions');
-
-            if (!dice_rolls || dice_rolls.length === 0) {
-                suggestionsDiv.innerHTML = '';
-                return;
-            }
-
-            // Format dice notation (e.g., "1d20" or "2d6 + 1d20")
-            const diceNotation = dice_rolls.map(dr => `${dr.count}d${dr.faces}`).join(' + ');
-
-            // Create roll button
-            const buttonsDiv = document.createElement('div');
-            buttonsDiv.className = 'suggestion-buttons';
-
-            const button = document.createElement('button');
-            button.className = 'suggestion-btn';
-            button.textContent = `🎲 Roll ${diceNotation}`;
-
-            button.onclick = () => {
-                // Remove any existing dice results before starting new roll
-                const suggestionsDiv = document.getElementById('suggestions');
-                const existingContainers = suggestionsDiv.querySelectorAll('.dice-animation-container');
-                existingContainers.forEach(container => container.remove());
-
-                // Disable button during animation
-                button.disabled = true;
-                button.textContent = 'Rolling...';
-
-                // Animate dice roll
-                animateDiceRoll(dice_rolls, (results, dice_rolls) => {
-                    // Calculate the formatted result in prose-like format
-                    const inputText = formatDiceProse(results, dice_rolls);
-
-                    // Fill in the input field
-                    document.getElementById('userInput').value = inputText;
-
-                    // Re-enable button and change text
-                    button.disabled = false;
-                    button.textContent = `🎲 Roll ${diceNotation}`;
-
-                    // Focus on input field so user can see the result and click submit
-                    document.getElementById('userInput').focus();
-                    // Don't auto-submit - let user click submit manually
-                });
-            };
-            buttonsDiv.appendChild(button);
-
-            suggestionsDiv.innerHTML = '<h4>Dice Rolls:</h4>';
-            suggestionsDiv.appendChild(buttonsDiv);
-        }
-
-        function formatDiceResult(results, dice_rolls) {
-            let resultIndex = 0;
-            const formattedResults = [];
-            let total = 0;
-
-            dice_rolls.forEach((diceRoll) => {
-                const groupResults = results.slice(resultIndex, resultIndex + diceRoll.count);
-                const groupTotal = groupResults.reduce((sum, r) => sum + r, 0);
-                total += groupTotal;
-
-                const diceNotation = `${diceRoll.count}d${diceRoll.faces}`;
-                if (diceRoll.count === 1) {
-                    formattedResults.push(`${diceNotation}=${groupTotal}`);
-                } else {
-                    formattedResults.push(`${diceNotation}=[${groupResults.join(',')}]=${groupTotal}`);
-                }
-
-                resultIndex += diceRoll.count;
-            });
-
-            if (dice_rolls.length > 1 || dice_rolls[0].count > 1) {
-                return `Rolled: ${formattedResults.join(', ')} (Total: ${total})`;
-            } else {
-                return `Rolled: ${formattedResults[0]}`;
-            }
-        }
-
-        function formatDiceProse(results, dice_rolls) {
-            let resultIndex = 0;
-            const parts = [];
-            let total = 0;
-
-            dice_rolls.forEach((diceRoll) => {
-                const groupResults = results.slice(resultIndex, resultIndex + diceRoll.count);
-                const groupTotal = groupResults.reduce((sum, r) => sum + r, 0);
-                total += groupTotal;
-
-                const diceNotation = `${diceRoll.count}d${diceRoll.faces}`;
-
-                if (diceRoll.count === 1) {
-                    // Single die: "rolled a 1d20 and got 15"
-                    parts.push(`rolled a ${diceNotation} and got ${groupTotal}`);
-                } else {
-                    // Multiple dice: "rolled 2d6 getting 3 and 5 for 8"
-                    const rollsText = groupResults.join(' and ');
-                    parts.push(`rolled ${diceNotation} getting ${rollsText} for ${groupTotal}`);
-                }
-
-                resultIndex += diceRoll.count;
-            });
-
-            // Combine all parts with proper prose
-            if (parts.length === 1) {
-                // Single roll group
-                if (dice_rolls[0].count === 1) {
-                    return `I ${parts[0]}`;
-                } else {
-                    return `I ${parts[0]}`;
-                }
-            } else {
-                // Multiple roll groups: "I rolled 2d6 getting 3 and 5 for 8, and a 1d20 getting 15, for a total of 23"
-                const lastPart = parts.pop();
-                let prose = `I ${parts.join(', ')}, and ${lastPart}`;
-                if (total > 0 && (dice_rolls.length > 1 || dice_rolls.some(dr => dr.count > 1))) {
-                    prose += `, for a total of ${total}`;
-                }
-                return prose;
-            }
+            choicesDiv.appendChild(buttonsDiv);
         }
 
         // Load story and API URL from localStorage on page load
@@ -1016,13 +722,9 @@
                 currentStory = saved.story;
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
-                displayMessages(saved.story.messages);
-                if (saved.next_action === "choose" && saved.suggestions) {
-                    displaySuggestions(saved.suggestions);
-                    updateInputPlaceholder("Type your action...");
-                } else if (saved.next_action === "roll" && saved.dice_rolls) {
-                    displayDiceRolls(saved.dice_rolls);
-                    updateInputPlaceholder("Type your roll or use the button below");
+                displayBeats(saved.story.beats);
+                if (saved.choices && saved.choices.length > 0) {
+                    displayChoices(saved.choices);
                 }
             }
         });
