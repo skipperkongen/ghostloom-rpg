@@ -41,7 +41,7 @@ app.add_middleware(
 
 # Global settings and LLM client
 settings = Settings()
-narrator: Narrator = DummyNarrator()
+narrator: Narrator = DummyNarrator(llm_api_key=settings.llm_api_key)
 
 
 @app.get("/health")
