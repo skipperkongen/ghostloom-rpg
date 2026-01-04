@@ -1,17 +1,30 @@
 """LLM client abstraction with stub implementation."""
 
-import random
-import re
 from abc import ABC, abstractmethod
 
-from app.models import Story, Message, Suggestion, DiceRoll
+from app.models import Beat, Story
+from app.models.story import Exposition
 
 
 class Narrator(ABC):
     """Abstract base class for LLM clients."""
 
     @abstractmethod
-    def init_story(self, seed: str) -> Story:
+    def generate_exposition(self, seed: str) -> Exposition:
+        "Generate a exposition for the story."
+        pass
+
+    @abstractmethod
+    def generate_narrator_beat(self, story: Story) -> Beat:
+        "Generate a narrator beat for the story"
+        pass
+
+    @abstractmethod
+    def generate_player_beat(self, story: Story, user_input: str) -> Beat:
+        "Generate a player beat for the story from user input"
+        pass
+
+    def initialise_story(self, seed: str) -> Story:
         """
         Initialize a new story from a seed prompt.
 
@@ -19,205 +32,64 @@ class Narrator(ABC):
             seed: User's initial story wish or prompt
 
         Returns:
-            Narration
+            Story
         """
-        pass
+        story = Story(
+            exposition=self.generate_exposition(seed),
+            beats=[],
+        )
+        story.beats.append(self.generate_narrator_beat(story))
+        return story
 
-    @abstractmethod
-    def transition(self, story: Story, input: str) -> Story:
+    def transition(self, story: Story, user_input: str) -> Story:
         """
         Continue the story based on user action.
+        - Adds two beats (user + narrator)
+        Not idempotent, modifies the story
 
         Args:
-            choice: The player's choice in the story
+            story: The story so far
+            input: The player's input or action in the story
 
         Returns:
-            Narration
+            The continued story after processing the user's input, with a user and narrator beat added
         """
-        pass
+        story.beats.append(self.generate_player_beat(story, user_input))
+        story.beats.append(self.generate_narrator_beat(story))
+        return story
 
 
-def make_suggestions(texts: list[str]) -> list[Suggestion]:
-    ids = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    return [Suggestion(id=ids[i], text=text) for i, text in enumerate(texts)]
-
-
-def make_dice_suggestion(dice_rolls: list[DiceRoll]) -> list[DiceRoll]:
-    """Return dice rolls for the response."""
-    return dice_rolls
-
-
-# Optional: extremely simple suggestion heuristics.
-# Keeps "canon" out of the story transcript.
-def suggest_for_seed(
-    seed: str,
-) -> tuple[list[Suggestion] | None, list[DiceRoll] | None]:
-    """
-    Return either suggestions or dice_rolls, but not both.
-    Returns (suggestions, dice_rolls) where exactly one is not None.
-    """
-    # Sometimes return a dice roll suggestion (30% chance)
-    if random.random() < 0.3:
-        # Common RPG dice combinations
-        dice_options = [
-            [DiceRoll(count=1, faces=20)],
-            [DiceRoll(count=2, faces=6)],
-            [DiceRoll(count=1, faces=20), DiceRoll(count=1, faces=6)],
-            [DiceRoll(count=3, faces=6)],
-        ]
-        dice_rolls = random.choice(dice_options)
-        return (None, dice_rolls)
-
-    # Otherwise return normal suggestions
-    return (make_suggestions(["Look around", "Move forward", "Call out"]), None)
-
-
-def suggest_for_input(
-    user_input: str,
-) -> tuple[list[Suggestion] | None, list[DiceRoll] | None]:
-    """
-    Return either suggestions or dice_rolls, but not both.
-    Returns (suggestions, dice_rolls) where exactly one is not None.
-    """
-    # If the user just rolled dice, always return suggestions (not more dice rolls)
-    if "Rolled:" in user_input:
-        return (
-            make_suggestions(
-                ["Proceed cautiously", "Ask a question", "Change my approach"]
-            ),
-            None,
+class DummyNarrator(Narrator):
+    def generate_exposition(self, seed: str) -> Exposition:
+        # A very basic, placeholder exposition using the seed.
+        return Exposition(
+            protagonist="Alex, an aspiring adventurer",
+            time="Present day",
+            place=seed if seed else "a mysterious village",
+            world_rules="Reality follows everyday logic with a hint of magic.",
+            other_characters=["Morgan, a helpful guide"],
+            relationships=["Alex and Morgan are friends."],
+            status_quo="Alex leads an ordinary life longing for adventure.",
+            backstory="Alex has always dreamed of seeing the world beyond the village.",
+            conflict_seed="A strange event hints at secrets in the forest.",
+            stakes="If Alex investigates, life may change forever.",
+            tone="Hopeful and curious",
+            genre="Fantasy adventure",
+            theme_hints=["Discovery", "Friendship"],
+            inciting_context="Rumors have spread about lights in the woods.",
+            rules_of_conflict=["Magic is rare but possible."],
+            foreshadowing=["Morgan seems to know more than they let on."],
         )
 
-    # Sometimes return a dice roll suggestion (30% chance)
-    if random.random() < 0.3:
-        # Common RPG dice combinations
-        dice_options = [
-            [DiceRoll(count=1, faces=20)],
-            [DiceRoll(count=2, faces=6)],
-            [DiceRoll(count=1, faces=20), DiceRoll(count=1, faces=6)],
-            [DiceRoll(count=1, faces=100)],
-        ]
-        dice_rolls = random.choice(dice_options)
-        return (None, dice_rolls)
-
-    # Otherwise return normal suggestions
-    return (
-        make_suggestions(
-            ["Proceed cautiously", "Ask a question", "Change my approach"]
-        ),
-        None,
-    )
-
-
-class SimpleNarrator(Narrator):
-    """
-    A minimal, deterministic narrator suitable for testing and scaffolding.
-    """
-
-    def init_story(self, seed: str) -> Story:
-        random_num = random.randint(1, 9999)
-        opening = (
-            f"[{random_num}] {seed.strip()}\n\nThe story begins.\n\nWhat do you do?"
+    def generate_narrator_beat(self, story: Story) -> Beat:
+        # Very simple canned narration for demonstration.
+        narration = (
+            f"As the sun rises over {story.exposition.place}, "
+            f"{story.exposition.protagonist.split(',')[0]} senses that today will be different."
         )
+        return Beat(role="narrator", text=narration)
 
-        return Story(
-            seed=seed,
-            messages=[Message(role="narrator", text=opening)],
-        )
-
-    def _get_dice_roll_context(self, dice_notation: str) -> str:
-        """Get contextual text for a dice roll based on the dice notation."""
-        # Map dice patterns to context
-        if dice_notation == "1d20":
-            contexts = [
-                "Make a saving throw",
-                "Roll for initiative",
-                "Make a skill check",
-                "Attempt a d20 check",
-            ]
-        elif dice_notation == "2d6":
-            contexts = [
-                "Roll for luck",
-                "Test your fortune",
-                "Roll 2d6",
-            ]
-        elif dice_notation == "1d20 + 1d6":
-            contexts = [
-                "Roll for attack and damage",
-                "Make an attack roll",
-            ]
-        elif dice_notation == "3d6":
-            contexts = [
-                "Roll for ability scores",
-                "Roll 3d6",
-            ]
-        elif dice_notation == "1d100":
-            contexts = [
-                "Roll percentile dice",
-                "Make a percentile check",
-            ]
-        else:
-            contexts = [f"Roll {dice_notation}"]
-
-        return random.choice(contexts)
-
-    def transition(self, story: Story, input: str) -> Story:
-        messages = list(story.messages)
-
-        # append user input
-        messages.append(Message(role="user", text=input))
-
-        # Check if dice were rolled (look for "Rolled:" pattern)
-        dice_rolled = "Rolled:" in input
-
-        # very simple continuation logic
-        random_num = random.randint(1, 9999)
-
-        if dice_rolled:
-            # Extract dice roll results from the formatted string
-            # Format: "1d20 (Rolled: 1d20=15)" or "2d6 (Rolled: 2d6=[3,5]=8, 1d20=[15]=15 (Total: 23))"
-            total_match = re.search(r"\(Total: (\d+)\)", input)
-            if total_match:
-                roll_result = total_match.group(1)
-                roll_description = f"a total of {roll_result}"
-            else:
-                # Try to extract individual roll results
-                roll_matches = re.findall(r"=\[?(\d+(?:,\d+)*)\]?=(\d+)", input)
-                if roll_matches:
-                    # Get the last total from the matches
-                    roll_result = roll_matches[-1][1]
-                    roll_description = roll_result
-                else:
-                    # Fallback: extract any number after "Rolled:"
-                    simple_match = re.search(r"Rolled:.*?=(\d+)", input)
-                    roll_result = simple_match.group(1) if simple_match else "unknown"
-                    roll_description = roll_result
-
-            # Extract the dice notation (before the dice roll annotation)
-            # Format: "1d20 (Rolled: ...)" -> "1d20"
-            dice_notation = re.sub(r"\s*\(Rolled:.*?\)\s*$", "", input).strip()
-            if not dice_notation or dice_notation == input:
-                # Fallback if regex didn't match
-                dice_notation = input.split("(Rolled:")[0].strip()
-
-            # Get contextual text for the dice roll
-            context = self._get_dice_roll_context(dice_notation)
-
-            assistant_text = (
-                f"[{random_num}] {context}.\n\n"
-                f"The dice land showing {roll_description}. The outcome of your roll becomes clear.\n\n"
-                "What do you do next?"
-            )
-        else:
-            assistant_text = (
-                f"[{random_num}] You decide to {input.strip()}.\n\n"
-                "The world responds to your action.\n\n"
-                "What do you do next?"
-            )
-
-        messages.append(Message(role="narrator", text=assistant_text))
-
-        return Story(
-            seed=story.seed,
-            messages=messages,
-        )
+    def generate_player_beat(self, story: Story, user_input: str) -> Beat:
+        # Simply parrots the user_input
+        text = f"{story.exposition.protagonist.split(',')[0]} decides to: {user_input}"
+        return Beat(role="player", text=text)

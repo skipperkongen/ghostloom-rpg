@@ -8,10 +8,9 @@ from pydantic_settings import BaseSettings
 from app.models import (
     ContinueStoryRequest,
     InitStoryRequest,
-    Message,
     StoryResponse,
 )
-from app.narrator import Narrator, SimpleNarrator, suggest_for_input, suggest_for_seed
+from app.narrator import Narrator, DummyNarrator
 
 
 class Settings(BaseSettings):
@@ -42,7 +41,7 @@ app.add_middleware(
 
 # Global settings and LLM client
 settings = Settings()
-narrator: Narrator = SimpleNarrator()
+narrator: Narrator = DummyNarrator()
 
 
 @app.get("/health")
@@ -53,85 +52,13 @@ async def health_check():
 
 @app.post("/init", response_model=StoryResponse)
 def init(req: InitStoryRequest) -> StoryResponse:
-    story = narrator.init_story(req.seed)
-    suggestions, dice_rolls = suggest_for_seed(req.seed)
+    story = narrator.initialise_story(req.seed)
 
-    if suggestions is not None:
-        return StoryResponse(
-            story=story,
-            next_action="choose",
-            suggestions=suggestions,
-        )
-    else:
-        # Adjust narration to mention dice rolling when next_action is "roll"
-        if story.messages and dice_rolls:
-            last_message = story.messages[-1]
-            if last_message.role == "narrator":
-                # Format dice notation
-                dice_notation = " + ".join(
-                    f"{dr.count}d{dr.faces}" for dr in dice_rolls
-                )
-                # Update the narration to mention dice rolling
-                updated_text = last_message.text
-                if "What do you do?" in updated_text:
-                    updated_text = updated_text.replace(
-                        "What do you do?",
-                        f"The situation calls for a roll of the dice. Roll {dice_notation} to determine the outcome.\n\nWhat do you do?",
-                    )
-                else:
-                    updated_text += f"\n\nThe situation calls for a roll of the dice. Roll {dice_notation} to determine the outcome."
-
-                # Create a new message list with the updated last message
-                updated_messages = story.messages[:-1] + [
-                    Message(role=last_message.role, text=updated_text)
-                ]
-                story = story.model_copy(update={"messages": updated_messages})
-
-        return StoryResponse(
-            story=story,
-            next_action="roll",
-            dice_rolls=dice_rolls,
-        )
+    return StoryResponse(story=story)
 
 
 @app.post("/continue", response_model=StoryResponse)
 def continue_(req: ContinueStoryRequest) -> StoryResponse:
     story = narrator.transition(req.story, req.user_input)
-    suggestions, dice_rolls = suggest_for_input(req.user_input)
 
-    if suggestions is not None:
-        return StoryResponse(
-            story=story,
-            next_action="choose",
-            suggestions=suggestions,
-        )
-    else:
-        # Adjust narration to mention dice rolling when next_action is "roll"
-        if story.messages and dice_rolls:
-            last_message = story.messages[-1]
-            if last_message.role == "narrator":
-                # Format dice notation
-                dice_notation = " + ".join(
-                    f"{dr.count}d{dr.faces}" for dr in dice_rolls
-                )
-                # Update the narration to mention dice rolling
-                updated_text = last_message.text
-                if "What do you do next?" in updated_text:
-                    updated_text = updated_text.replace(
-                        "What do you do next?",
-                        f"The situation calls for a roll of the dice. Roll {dice_notation} to determine the outcome.\n\nWhat do you do next?",
-                    )
-                else:
-                    updated_text += f"\n\nThe situation calls for a roll of the dice. Roll {dice_notation} to determine the outcome."
-
-                # Create a new message list with the updated last message
-                updated_messages = story.messages[:-1] + [
-                    Message(role=last_message.role, text=updated_text)
-                ]
-                story = story.model_copy(update={"messages": updated_messages})
-
-        return StoryResponse(
-            story=story,
-            next_action="roll",
-            dice_rolls=dice_rolls,
-        )
+    return StoryResponse(story=story)

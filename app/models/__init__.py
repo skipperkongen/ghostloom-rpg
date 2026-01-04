@@ -2,22 +2,20 @@
 
 from app.models.protocol import (
     ContinueStoryRequest,
-    DiceRoll,
     InitStoryRequest,
-    Suggestion,
+    Choice,
     StoryResponse,
 )
-from app.models.story import Role, Message, Story
+from app.models.story import Role, Beat, Story
 
 __all__ = [
     # Protocol models
     "ContinueStoryRequest",
-    "DiceRoll",
     "InitStoryRequest",
-    "Suggestion",
+    "Choice",
     "StoryResponse",
     # State models
     "Role",
-    "Message",
+    "Beat",
     "Story",
 ]
