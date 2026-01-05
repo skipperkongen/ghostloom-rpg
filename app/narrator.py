@@ -121,18 +121,20 @@ class DummyNarrator(Narrator):
         story_json = story.model_dump_json(indent=2)
 
         system_prompt = (
-            "You are a creative storyteller. Generate a narrator beat that continues the story "
-            "based on the current story context. Return your response as a plain text description (not JSON). "
-            "The narration should be written in third person and describe what happens next in the story, "
-            "reacting to the previous player action if there was one. "
-            "Write in the present tense and be brief."
+            "You are a creative storyteller. Generate a SHORT, CONCISE narrator beat that continues the story. "
+            "Return your response as a plain text description (not JSON). "
+            "The narration should be written in third person, present tense. "
+            "CRITICAL: Keep each beat to 1-2 sentences maximum (20-40 words). "
+            "Be direct and to the point - focus on the immediate action or consequence, not lengthy descriptions. "
+            "Each beat should advance the story incrementally, leaving room for the player to act."
         )
 
         user_prompt = (
             f"Given this story context:\n\n{story_json}\n\n"
-            f"Generate a narrator beat text that continues the story. "
-            f"The beat should be written in third person narration and advance the story naturally. "
-            f"If there was a recent player action, the narration should react to it. "
+            f"Generate a SHORT narrator beat (1-2 sentences, 20-40 words max) that continues the story. "
+            f"Write in third person, present tense. "
+            f"If there was a recent player action, briefly describe the immediate result or consequence. "
+            f"Be concise and direct - avoid lengthy descriptions or multiple events. "
             f"Return only the narration text, no JSON, no additional formatting. "
         )
 
@@ -142,7 +144,8 @@ class DummyNarrator(Narrator):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.8,
+            temperature=0.7,
+            max_tokens=100,  # Limit response length to ensure brevity
         )
 
         beat_text = response.choices[0].message.content.strip()

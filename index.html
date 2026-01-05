@@ -376,6 +376,120 @@
         .reset-btn:hover {
             background: #c82333;
         }
+
+        .exposition-panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e9ecef;
+        }
+
+        .exposition-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .exposition-header h3 {
+            color: #667eea;
+            font-size: 1.2em;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .exposition-toggle {
+            background: none;
+            border: none;
+            color: #667eea;
+            font-size: 1.2em;
+            cursor: pointer;
+            padding: 5px;
+            transition: transform 0.2s;
+        }
+
+        .exposition-toggle:hover {
+            transform: scale(1.1);
+        }
+
+        .exposition-content {
+            column-count: 2;
+            column-gap: 10px;
+            column-fill: balance;
+        }
+
+        @media (max-width: 700px) {
+            .exposition-content {
+                column-count: 1;
+            }
+        }
+
+        .exposition-content.collapsed {
+            display: none;
+        }
+
+        .exposition-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid #e9ecef;
+            margin-bottom: 10px;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .exposition-section-header {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1em;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .exposition-field {
+            margin-bottom: 8px;
+        }
+
+        .exposition-field:last-child {
+            margin-bottom: 0;
+        }
+
+        .exposition-field-label {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 3px;
+        }
+
+        .exposition-field-value {
+            color: #333;
+            line-height: 1.4;
+            font-size: 0.95em;
+        }
+
+        .exposition-field-value ul {
+            margin: 3px 0;
+            padding-left: 20px;
+        }
+
+        .exposition-field-value li {
+            margin-bottom: 2px;
+        }
+
+        .exposition-field-value li:last-child {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 
@@ -413,6 +527,16 @@
                 <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
                     <div id="error" class="error" style="display: none;"></div>
                     <div id="loading" class="loading" style="display: none;">Loading...</div>
+                    <div id="expositionPanel" class="exposition-panel" style="display: none;">
+                        <div class="exposition-header" onclick="toggleExposition()">
+                            <h3>📚 Story Exposition</h3>
+                            <button class="exposition-toggle" id="expositionToggle"
+                                aria-label="Toggle exposition">▼</button>
+                        </div>
+                        <div id="expositionContent" class="exposition-content">
+                            <!-- Exposition fields will be populated here -->
+                        </div>
+                    </div>
                     <div id="messages" class="messages"></div>
                 </div>
                 <div class="input-section">
@@ -571,6 +695,11 @@
                 }
 
                 const data = await response.json();
+
+                if (!data || !data.story) {
+                    throw new Error('Invalid response from server: missing story data');
+                }
+
                 currentStory = data.story;
 
                 // Save to localStorage
@@ -579,8 +708,17 @@
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
 
-                displayBeats(data.story.beats);
-                if (data.choices && data.choices.length > 0) {
+                try {
+                    displayExposition(data.story?.exposition);
+                } catch (e) {
+                    console.error('Error displaying exposition:', e);
+                }
+
+                if (data.story.beats && Array.isArray(data.story.beats)) {
+                    displayBeats(data.story.beats);
+                }
+
+                if (data.choices && Array.isArray(data.choices) && data.choices.length > 0) {
                     displayChoices(data.choices);
                 }
             } catch (error) {
@@ -634,6 +772,11 @@
                 // Save to localStorage
                 saveStory(data.story, data.choices);
 
+                try {
+                    displayExposition(data.story?.exposition);
+                } catch (e) {
+                    console.error('Error displaying exposition:', e);
+                }
                 displayBeats(data.story.beats);
                 if (data.choices && data.choices.length > 0) {
                     displayChoices(data.choices);
@@ -704,6 +847,184 @@
             choicesDiv.appendChild(buttonsDiv);
         }
 
+        function toggleExposition() {
+            const content = document.getElementById('expositionContent');
+            const toggle = document.getElementById('expositionToggle');
+            content.classList.toggle('collapsed');
+            toggle.textContent = content.classList.contains('collapsed') ? '▶' : '▼';
+        }
+
+        function displayExposition(exposition) {
+            try {
+                const panel = document.getElementById('expositionPanel');
+                const content = document.getElementById('expositionContent');
+
+                if (!panel || !content) {
+                    console.warn('Exposition panel elements not found');
+                    return;
+                }
+
+                if (!exposition || typeof exposition !== 'object') {
+                    panel.style.display = 'none';
+                    return;
+                }
+
+                panel.style.display = 'block';
+                content.innerHTML = '';
+
+                // Helper function to create a field
+                function createField(label, value, showLabel = true) {
+                    if (!value || (Array.isArray(value) && value.length === 0)) {
+                        return null;
+                    }
+
+                    const fieldDiv = document.createElement('div');
+                    fieldDiv.className = 'exposition-field';
+
+                    if (showLabel) {
+                        const labelDiv = document.createElement('div');
+                        labelDiv.className = 'exposition-field-label';
+                        labelDiv.textContent = label;
+                        fieldDiv.appendChild(labelDiv);
+                    }
+
+                    const valueDiv = document.createElement('div');
+                    valueDiv.className = 'exposition-field-value';
+
+                    if (Array.isArray(value)) {
+                        const ul = document.createElement('ul');
+                        value.forEach(item => {
+                            const li = document.createElement('li');
+                            li.textContent = item;
+                            ul.appendChild(li);
+                        });
+                        valueDiv.appendChild(ul);
+                    } else {
+                        valueDiv.textContent = value;
+                    }
+
+                    fieldDiv.appendChild(valueDiv);
+                    return fieldDiv;
+                }
+
+                // Helper to create a section
+                function createSection(headerText, fields, singleFieldNoLabel = false) {
+                    if (fields.length === 0) return null;
+                    const sectionDiv = document.createElement('div');
+                    sectionDiv.className = 'exposition-section';
+
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = 'exposition-section-header';
+                    headerDiv.textContent = headerText;
+                    sectionDiv.appendChild(headerDiv);
+
+                    fields.forEach(field => {
+                        if (field) sectionDiv.appendChild(field);
+                    });
+
+                    return sectionDiv;
+                }
+
+                // Setting
+                const settingFields = [];
+                if (exposition.time) {
+                    const field = createField('Time', exposition.time);
+                    if (field) settingFields.push(field);
+                }
+                if (exposition.place) {
+                    const field = createField('Place', exposition.place);
+                    if (field) settingFields.push(field);
+                }
+                if (exposition.world_rules) {
+                    const field = createField('World Rules', exposition.world_rules);
+                    if (field) settingFields.push(field);
+                }
+                if (settingFields.length > 0) {
+                    const section = createSection('📍 Setting', settingFields);
+                    if (section) content.appendChild(section);
+                }
+
+                // Characters
+                const characterFields = [];
+                if (exposition.protagonist) {
+                    const field = createField('Protagonist', exposition.protagonist);
+                    if (field) characterFields.push(field);
+                }
+                if (exposition.other_characters && Array.isArray(exposition.other_characters) && exposition.other_characters.length > 0) {
+                    const field = createField('Other Characters', exposition.other_characters);
+                    if (field) characterFields.push(field);
+                }
+                if (exposition.relationships && Array.isArray(exposition.relationships) && exposition.relationships.length > 0) {
+                    const field = createField('Relationships', exposition.relationships);
+                    if (field) characterFields.push(field);
+                }
+                if (characterFields.length > 0) {
+                    const section = createSection('👥 Characters', characterFields);
+                    if (section) content.appendChild(section);
+                }
+
+                // Status Quo
+                if (exposition.status_quo) {
+                    const field = createField('Status Quo', exposition.status_quo, false);
+                    if (field) {
+                        const section = createSection('📋 Status Quo', [field]);
+                        if (section) content.appendChild(section);
+                    }
+                }
+
+                // Conflict
+                const conflictFields = [];
+                if (exposition.conflict_seed) {
+                    const field = createField('Conflict Seed', exposition.conflict_seed);
+                    if (field) conflictFields.push(field);
+                }
+                if (exposition.stakes) {
+                    const field = createField('Stakes', exposition.stakes);
+                    if (field) conflictFields.push(field);
+                }
+                if (conflictFields.length > 0) {
+                    const section = createSection('⚔️ Conflict', conflictFields);
+                    if (section) content.appendChild(section);
+                }
+
+                // Tone & Genre
+                const toneFields = [];
+                if (exposition.tone) {
+                    const field = createField('Tone', exposition.tone);
+                    if (field) toneFields.push(field);
+                }
+                if (exposition.genre) {
+                    const field = createField('Genre', exposition.genre);
+                    if (field) toneFields.push(field);
+                }
+                if (toneFields.length > 0) {
+                    const section = createSection('🎭 Tone & Genre', toneFields);
+                    if (section) content.appendChild(section);
+                }
+
+                // Themes
+                if (exposition.theme_hints && Array.isArray(exposition.theme_hints) && exposition.theme_hints.length > 0) {
+                    const field = createField('Theme Hints', exposition.theme_hints, false);
+                    if (field) {
+                        const section = createSection('💭 Themes', [field]);
+                        if (section) content.appendChild(section);
+                    }
+                }
+
+                // Backstory
+                if (exposition.backstory) {
+                    const field = createField('Backstory', exposition.backstory, false);
+                    if (field) {
+                        const section = createSection('📖 Backstory', [field]);
+                        if (section) content.appendChild(section);
+                    }
+                }
+            } catch (error) {
+                console.error('Error displaying exposition:', error);
+                // Don't break the UI if exposition display fails
+            }
+        }
+
         // Load story and API URL from localStorage on page load
         window.addEventListener('DOMContentLoaded', function () {
             // Load API URL
@@ -722,6 +1043,11 @@
                 currentStory = saved.story;
                 document.getElementById('initSection').style.display = 'none';
                 document.getElementById('storySection').classList.add('active');
+                try {
+                    displayExposition(saved.story?.exposition);
+                } catch (e) {
+                    console.error('Error displaying exposition:', e);
+                }
                 displayBeats(saved.story.beats);
                 if (saved.choices && saved.choices.length > 0) {
                     displayChoices(saved.choices);
