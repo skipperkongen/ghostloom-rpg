@@ -1,9 +1,9 @@
 """FastAPI application for the story engine service."""
 
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic_settings import BaseSettings
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.models import (
     ContinueStoryRequest,
@@ -16,11 +16,16 @@ from app.narrator import Narrator, DummyNarrator
 class Settings(BaseSettings):
     """Application settings from environment variables."""
 
-    llm_api_key: str = os.getenv("LLM_API_KEY", "")
+    llm_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPENAI_API_KEY", "llm_api_key"),
+    )
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 # Initialize FastAPI app

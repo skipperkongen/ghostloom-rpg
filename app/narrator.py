@@ -63,9 +63,47 @@ class DummyNarrator(Narrator):
         self._client = OpenAI(api_key=self._llm_api_key) if self._llm_api_key else None
 
     def generate_exposition(self, seed: str) -> Exposition:
-        """Generate an exposition using OpenAI API."""
+        """Generate an exposition.
+
+        If an LLM API key is configured, use OpenAI for rich exposition.
+        Otherwise, fall back to a simple, local exposition so the app
+        still works without any external dependencies.
+        """
         if not self._client:
-            raise ValueError("OpenAI client not initialized. LLM API key is required.")
+            # Offline / no‑LLM fallback
+            return Exposition(
+                time="An undefined moment in time",
+                place="A loosely sketched setting born from your imagination",
+                world_rules=(
+                    "The world mostly follows common-sense rules, but bends "
+                    "whenever it makes the story more interesting."
+                ),
+                protagonist="You, an inquisitive protagonist exploring this story space",
+                other_characters=[
+                    "A shifting cast of characters who appear as needed",
+                ],
+                relationships=[
+                    "You feel loosely connected to the people and places you encounter.",
+                ],
+                status_quo="Life ambles along until your latest idea sparks a new adventure.",
+                backstory=(
+                    f"Your story begins from a simple idea: '{seed}'. "
+                    "Details fill in as you make choices."
+                ),
+                conflict_seed="Tension emerges whenever you push beyond what is safe or expected.",
+                stakes="If you hesitate, the opportunity for discovery may slip away.",
+                tone="Curious, flexible, and lightly adventurous.",
+                genre="Freeform interactive fiction",
+                theme_hints=["Curiosity", "Discovery", "Improvisation"],
+                inciting_context="You decide to follow a new thread and see where it leads.",
+                rules_of_conflict=[
+                    "Consequences follow your choices, but rarely close off all paths.",
+                    "The world reacts just enough to keep things interesting.",
+                ],
+                foreshadowing=[
+                    "Unseen possibilities linger just outside your current focus.",
+                ],
+            )
 
         system_prompt = (
             "You are a creative storyteller. Generate a detailed story exposition based on the user's seed prompt. "
@@ -113,9 +151,30 @@ class DummyNarrator(Narrator):
         return Exposition(**exposition_data)
 
     def generate_narrator_beat(self, story: Story) -> Beat:
-        """Generate a narrator beat using OpenAI API."""
+        """Generate a narrator beat.
+
+        With an API key, this uses OpenAI for narration.
+        Without one, it produces a lightweight, local continuation so
+        the game loop remains fully playable.
+        """
         if not self._client:
-            raise ValueError("OpenAI client not initialized. LLM API key is required.")
+            last_player_input = None
+            for beat in reversed(story.beats):
+                if beat.role == "player":
+                    last_player_input = beat.text
+                    break
+
+            if last_player_input:
+                text = (
+                    f"You take a moment to {last_player_input}, and the world subtly "
+                    "shifts in response, opening up new possibilities ahead."
+                )
+            else:
+                text = (
+                    "The scene settles around you, waiting for your first decisive move."
+                )
+
+            return Beat(role="narrator", text=text)
 
         # Serialize the story to JSON for the prompt
         story_json = story.model_dump_json(indent=2)

@@ -6,6 +6,24 @@ A small FastAPI service that generates and continues interactive stories using a
 
 The service is intentionally simple: the client sends a `seed` to start a story, then sends the evolving `story` plus `user_input` to continue it. State is passed back and forth in the request/response body rather than stored in a database.
 
+## Quickstart: try the demo
+
+1. **Start the API** (pick one):
+   - Python: `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+   - Docker: `docker compose up --build`
+   - Makefile: `make start`
+
+2. **Option A – Bruno/Postman client**
+   - Open the `bruno/Ghostloom` collection in Bruno and run:
+     - `Health` → check `GET /health`
+     - `Init` → call `POST /init` with a `seed`
+     - `Continue` → call `POST /continue` with the returned `story` and your next input
+   - If you prefer Postman, recreate the same three requests there using the endpoint and bodies shown below.
+
+3. **Option B – Browser client**
+   - With the API running on `http://localhost:8000`, open `index.html` in your browser (e.g. double‑click the file or serve it with a simple static server).
+   - Use the UI to start a story and send follow‑up inputs; it talks directly to `POST /init` and `POST /continue`.
+
 ## Concept
 
 - **LLM-driven**: Narrative text and progression are produced by a narrator abstraction.
@@ -85,14 +103,14 @@ Continue an existing story with new user input.
 ### Prerequisites
 
 - Python 3.11+
-- Optional: Docker and Docker Compose
+- Optional: Docker and Docker Compose (for container-based workflow)
 
 ### Setup
 
 1. **Clone the repository** (if not already done):
    ```bash
    git clone <repository-url>
-   cd ghostloom
+   cd ghostloom-rpg
    ```
 
 2. **Create and activate a virtual environment**:
@@ -118,7 +136,7 @@ Continue an existing story with new user input.
 
    The only relevant variable today is:
 
-   - `LLM_API_KEY` (optional, for a real LLM-backed narrator implementation)
+   - `OPENAI_API_KEY` (optional, for a real LLM-backed narrator implementation)
 
 5. **Run the server**:
    ```bash
@@ -128,94 +146,64 @@ Continue an existing story with new user input.
 6. **View API documentation**:
    Open `http://localhost:8000/docs` in your browser for interactive API documentation.
 
-## Deployment to DigitalOcean App Platform
+### Running with Docker Compose
 
-### Prerequisites
+If you prefer to run everything in a container:
 
-- DigitalOcean account
-- `doctl` CLI tool installed (optional, for CLI deployment)
+1. Ensure Docker and Docker Compose are installed.
+2. From the project root, run:
 
-### Deployment Steps
-
-1. **Prepare your code**:
-   - Ensure all code is committed to your git repository
-   - The repository should contain:
-     - `Dockerfile`
-     - `app/` directory with all application code
-     - `requirements.txt`
-
-2. **Create a DigitalOcean App**:
-
-   **Option A: Using the Web UI**
-   
-   - Go to [DigitalOcean App Platform](https://cloud.digitalocean.com/apps)
-   - Click "Create App"
-   - Connect your GitHub/GitLab repository
-   - Select the repository and branch
-   - DigitalOcean should auto-detect the Dockerfile
-   - Configure the app:
-     - **Name**: `story-engine` (or your preferred name)
-     - **Type**: Web Service
-     - **Dockerfile Path**: `Dockerfile`
-     - **HTTP Port**: `8000`
-   
-   **Option B: Using `app.yaml`** (recommended for reproducibility)
-   
-   Create an `app.yaml` file in the root:
-   ```yaml
-   name: story-engine
-   services:
-     - name: api
-       source_dir: /
-       github:
-         repo: your-username/ghostloom
-         branch: main
-       run_command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-       environment_slug: python
-       instance_count: 1
-       instance_size_slug: basic-xxs
-       http_port: 8000
-       routes:
-         - path: /
-       envs:
-         - key: STATE_SECRET_KEY
-           scope: RUN_TIME
-           type: SECRET
-         - key: LLM_API_KEY
-           scope: RUN_TIME
-           type: SECRET
+   ```bash
+   docker compose up --build
    ```
 
-3. **Set Environment Variables**:
-   - In the App Platform UI, go to your app's Settings → App-Level Environment Variables
-   - Add the following:
-     - `LLM_API_KEY`: Optional, for when you replace the dummy narrator with a real LLM client.
+3. The API will be available at `http://localhost:8000`, and docs at `http://localhost:8000/docs`.
 
-4. **Deploy**:
-   - If using the web UI: Click "Create Resources" or "Deploy"
-   - If using `doctl`:
-     ```bash
-     doctl apps create --spec app.yaml
-     ```
+To stop the service:
 
-5. **Verify Deployment**:
-   - Once deployed, DigitalOcean will provide a URL like `https://story-engine-xyz.ondigitalocean.app`
-   - Test the health endpoint:
-     ```bash
-     curl https://your-app-url.ondigitalocean.app/health
-     ```
+```bash
+docker compose down
+```
 
-### Important Notes for Production
+### Using the Makefile helpers
 
-- **HTTPS**: DigitalOcean App Platform provides HTTPS by default
-- **Scaling**: Adjust `instance_count` and `instance_size_slug` in `app.yaml` based on your needs
-- **Logs**: Monitor logs in the DigitalOcean App Platform dashboard
+The `Makefile` provides convenience targets that wrap `docker compose`:
+
+- **List targets**:
+
+  ```bash
+  make help
+  ```
+
+- **Start the service (detached)**:
+
+  ```bash
+  make start
+  ```
+
+- **View logs**:
+
+  ```bash
+  make logs
+  ```
+
+- **Stop the service**:
+
+  ```bash
+  make stop
+  ```
+
+- **Clean and rebuild everything**:
+
+  ```bash
+  make rebuild
+  ```
 
 ## Environment Variables
 
-| Variable      | Required | Description                                               |
-|--------------|----------|-----------------------------------------------------------|
-| `LLM_API_KEY` | No       | API key for a real LLM-backed narrator (optional today). |
+| Variable        | Required | Description                                               |
+|----------------|----------|-----------------------------------------------------------|
+| `OPENAI_API_KEY` | No       | API key for a real LLM-backed narrator (optional today). |
 
 ## Narrator / LLM Integration
 
