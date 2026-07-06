@@ -181,6 +181,24 @@ Extend the existing `Narrator` abstraction:
 }
 ```
 
+## Deployment
+
+The API ships as a **Docker image** and is deployed to a container host (e.g. Coolify).
+
+- One image runs the FastAPI app; PostgreSQL is a separate service (managed DB or container).
+- Configuration via environment variables (database URL, session secret, key-encryption secret, CORS origins).
+- **Cross-origin clients** must be allowed: the API may live on a subdomain (e.g. `api.ghostloom.com`) while clients run on other domains or subdomains (e.g. `ghostloom.com`, `ghostloomgame.com`).
+- CORS is configured explicitly — allowed origins come from env (not `*` in production) and include credentials/headers needed for bearer auth.
+
+## CI/CD
+
+On every push to **`main`**, GitHub Actions builds the Docker image and publishes it to **GitHub Container Registry (GHCR)**.
+
+- Image tag: commit SHA; also tag `latest` on main.
+- Package name: `ghcr.io/<org>/ghostloom-api` (or equivalent org/repo naming).
+- Workflow runs tests/lint before build; failed checks do not publish.
+- Deploy targets (Coolify, etc.) pull the published image — deployment itself is out of band unless wired later.
+
 ## Implementation order
 
 1. Postgres, SQLAlchemy, Alembic, settings
@@ -191,6 +209,7 @@ Extend the existing `Narrator` abstraction:
 6. End conditions — death, mission complete
 7. Export / import
 8. Remove legacy `/init`, `/continue`, and env-based default API key
+9. Dockerfile, CORS config, GHCR publish workflow on push to main
 
 ## Out of scope for v1
 
