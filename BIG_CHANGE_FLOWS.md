@@ -269,7 +269,7 @@ Authorization: Bearer …
 
 **Side effects:**
 - If the user has no keys remaining, they can no longer `POST /games`.
-- **In-progress games** where this user is host continue to work until the next LLM call fails (key gone). Practically: host should not delete key while games are active. If the game's selected `api_key_id` is missing at runtime, LLM-backed operations return `502`.
+- **In-progress games** where this user is host continue only while the selected key remains usable. If the game's selected `api_key_id` is missing at runtime, DM resolution enters `resolution_failed` with `error_code=1006` (`api_key_not_found`). If the key exists but provider rejects it, use `error_code=1007` (`api_key_not_valid`).
 
 ---
 
@@ -734,6 +734,46 @@ The poll endpoint follows the canonical `GET /games/{game_id}` round-state contr
    - `round_state.status`: `resolution_failed`
    - Includes `error_code`, `error_message`, `retryable`, and retry metadata.
 
+### Explicit `dm_round` poll state shape
+
+During `phase = dm_round`, `GET /games/{id}` returns:
+
+```json
+{
+  "status": "active",
+  "phase": "dm_round",
+  "round_number": 3,
+  "round_state": {
+    "status": "resolving_round",
+    "error_code": null,
+    "error_code_name": null,
+    "error_message": null,
+    "retryable": null,
+    "attempt_count": null
+  },
+  "players": [
+    {
+      "user_id": "u1",
+      "is_alive": true,
+      "life_state": "alive",
+      "death_round": null,
+      "death_summary": null,
+      "action_submitted": true
+    },
+    {
+      "user_id": "u2",
+      "is_alive": false,
+      "life_state": "dead",
+      "death_round": 2,
+      "death_summary": "Killed by collapsing bridge in round 2.",
+      "action_submitted": false
+    }
+  ]
+}
+```
+
+Dead players always remain present in `players` with `is_alive = false`, `life_state = dead`, and death metadata. They are never eligible to submit actions.
+
 **During `dm_round`:** Client should disable action input and continue polling until `player_round`, `ended`, or `resolution_failed`.
 
 **Ended game:** Same endpoint; `status` = `ended`, `end_reason` = `all_dead` | `mission_complete`. All mutation endpoints return `409`.
@@ -779,7 +819,7 @@ Authorization: Bearer …
 **Server behaviour:**
 1. Call `Narrator.adjudicate_action(story, exposition, character, action_text)`.
 2. **If rejected:**
-   - Upsert `pending_actions` with `adjudication` = `rejected`, `rejection_reason` set.
+   - Do **not** create or update a `pending_actions` row.
    - Return `422`:
      ```json
      {
@@ -790,7 +830,7 @@ Authorization: Bearer …
      ```
    - Player may submit again (see retry).
 3. **If accepted:**
-   - Upsert `pending_actions` with `adjudication` = `accepted`, `action_text` stored.
+   - Upsert `pending_actions` with `action_type` = `act` and `action_text` stored (non-null).
    - Return `200`:
      ```json
      {
@@ -806,8 +846,11 @@ Authorization: Bearer …
 
 **Retry after rejection:**
 - Player calls `POST /games/{game_id}/actions` again with revised text.
-- Previous rejected `pending_actions` row is replaced.
+- No rejected action row exists in `pending_actions`; retry is a fresh adjudication attempt.
 - No limit on retries within the round deadline.
+
+**No-write error rule (mutation safety):**
+- If preconditions fail (`phase` not `player_round`, user dead, not active/eligible, already accepted action, invalid payload), return HTTP error and do not create/update/delete any `pending_actions` row.
 
 ---
 
@@ -822,7 +865,7 @@ POST /games/{game_id}/actions
 **Preconditions:** Same as act, except no `action_text`.
 
 **Server behaviour:**
-1. Pass is always accepted. Store `pending_actions` with `action_type` = `pass`, `adjudication` = `accepted`.
+1. Pass is always accepted. Store `pending_actions` with `action_type` = `pass` and `action_text` = `NULL`.
 2. Return `200` `{ "status": "accepted", "action_type": "pass" }`.
 3. Check round completion; possibly trigger DM round.
 
@@ -920,7 +963,10 @@ On **every** `GET /games/{id}`, `POST /actions`, and a periodic server-side chec
 9. If resolution fails (provider unavailable, credits exhausted, timeout, or internal error):
    - Keep accepted `pending_actions` intact for the round.
    - Set `phase` = `resolution_failed`.
-   - Store failure metadata for polling: `error_code`, `error_message`, `retryable`, `attempt_count`, `failed_at`.
+   - Store failure metadata for polling: numeric `error_code`, `error_code_name`, `error_message`, `retryable`, `attempt_count`, `failed_at`.
+   - Use canonical numeric enum from `BIG_CHANGE.md` (`1001`..`1007`), including:
+     - `1006` `api_key_not_found`
+     - `1007` `api_key_not_valid`
 
 **Client behaviour:** Poll until `phase` returns to `player_round`, reaches `ended`, or enters `resolution_failed`. Display new beats only after resolve.
 
@@ -1069,6 +1115,18 @@ Submitting the same accepted action again → `409`. Submitting after round adva
 | `502` | Bad gateway | LLM provider error |
 | `503` | Service unavailable | Database unreachable |
 
+### `round_resolution_failures.error_code` enum
+
+| Numeric code | Name | Description |
+|---|---|---|
+| `1001` | `llm_provider_unavailable` | LLM provider is temporarily unavailable or unreachable. |
+| `1002` | `insufficient_credits` | Provider account has insufficient credits or quota. |
+| `1003` | `rate_limited` | Provider rate limit was exceeded. |
+| `1004` | `timeout` | LLM request timed out before completion. |
+| `1005` | `internal_error` | Internal server error during DM resolution. |
+| `1006` | `api_key_not_found` | Game references an API key record that no longer exists. |
+| `1007` | `api_key_not_valid` | Stored API key is rejected by the provider as invalid. |
+
 ---
 
 ## Decisions log
@@ -1117,6 +1175,8 @@ exposition (JSONB extension)
   playable_characters      — array of { id, name, role, hook }
 
 pending_actions
+  action_type            — act | pass
+  action_text            — required for act; NULL for pass
   round_number           — int
   forced_by_timeout      — boolean, default false
   UNIQUE (game_id, user_id, round_number)  — one slot per player per round
@@ -1124,7 +1184,8 @@ pending_actions
 round_resolution_failures
   game_id                — FK
   round_number           — int
-  error_code             — enum/string
+  error_code             — numeric enum (1001..1007)
+  error_code_name        — enum string
   error_message          — text
   retryable              — boolean
   attempt_count          — int

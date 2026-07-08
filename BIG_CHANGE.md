@@ -173,7 +173,8 @@ phase_transitions:
   "round_number": 3,
   "round_state": {
     "status": "actions_pending|resolving_round|resolved|resolution_failed",
-    "error_code": "string|null",
+    "error_code": "number|null",
+    "error_code_name": "string|null",
     "error_message": "string|null",
     "retryable": "boolean|null",
     "attempt_count": "number|null"
@@ -182,6 +183,9 @@ phase_transitions:
     {
       "user_id": "user-uuid",
       "is_alive": true,
+      "life_state": "alive|dead",
+      "death_round": "number|null",
+      "death_summary": "string|null",
       "action_submitted": false
     }
   ]
@@ -194,6 +198,34 @@ Invariants:
 - `phase=dm_round` => `round_state.status=resolving_round`
 - `phase=resolution_failed` => `round_state.status=resolution_failed`
 - `phase=ended` => game is read-only; all mutation endpoints return `409 Conflict`
+- During `dm_round`, players already marked dead remain in `players[]` with `is_alive=false`, `life_state=dead`, and their death metadata populated.
+
+### Round resolution error codes (numeric enum)
+
+```yaml
+round_resolution_error_codes:
+  1001:
+    name: llm_provider_unavailable
+    description: LLM provider is temporarily unavailable or unreachable.
+  1002:
+    name: insufficient_credits
+    description: Provider account has insufficient credits or quota.
+  1003:
+    name: rate_limited
+    description: Provider rate limit was exceeded.
+  1004:
+    name: timeout
+    description: LLM request timed out before completion.
+  1005:
+    name: internal_error
+    description: Internal server error during DM resolution.
+  1006:
+    name: api_key_not_found
+    description: Game references an API key record that no longer exists.
+  1007:
+    name: api_key_not_valid
+    description: Stored API key is rejected by the provider as invalid.
+```
 
 ### Endpoint capabilities (machine-readable)
 
@@ -293,14 +325,13 @@ game_players
 pending_actions          # current player round only
   id, game_id, user_id
   action_type              — act | pass
-  action_text
-  adjudication             — null | accepted | rejected
-  rejection_reason
+  action_text              — required when action_type=act; NULL when action_type=pass
   created_at
 
 round_resolution_failures
   id, game_id, round_number
-  error_code               — llm_provider_unavailable | insufficient_credits | rate_limited | timeout | internal_error
+  error_code               — numeric enum (see round_resolution_error_codes)
+  error_code_name          — llm_provider_unavailable | insufficient_credits | rate_limited | timeout | internal_error | api_key_not_found | api_key_not_valid
   error_message            — user-safe message
   retryable                — boolean
   attempt_count            — int
