@@ -1,6 +1,6 @@
 # Big Change — Flows
 
-Companion to [BIG_CHANGE.md](./BIG_CHANGE.md). That document defines architecture, API surface, and data model. **This document defines every user-visible flow in step-by-step detail** — preconditions, API calls, server behaviour, state changes, error cases, and client expectations.
+Companion to [BIG_CHANGE.md](./BIG_CHANGE.md). That document defines architecture, API surface, and data model. **`BIG_CHANGE.md` is the canonical contract source of truth** (routing, phase transitions, poll shape, endpoint capabilities). This document defines user-visible flow sequencing and UX expectations without redefining the canonical contract.
 
 Nothing here is implemented yet. When implementation diverges from this spec, update this file.
 
@@ -17,19 +17,16 @@ Nothing here is implemented yet. When implementation diverges from this spec, up
 7. [Joining a game](#joining-a-game)
 8. [Leaving a game](#leaving-a-game)
 9. [Character creation and customisation](#character-creation-and-customisation)
-10. [Importing a character from another game](#importing-a-character-from-another-game)
-11. [Starting a game (exposition)](#starting-a-game-exposition)
-12. [Polling game state](#polling-game-state)
-13. [Submitting actions (player round)](#submitting-actions-player-round)
-14. [AFK timeout and forced pass](#afk-timeout-and-forced-pass)
-15. [DM round](#dm-round)
-16. [Death and incapacitation](#death-and-incapacitation)
-17. [End conditions](#end-conditions)
-18. [Exporting a game](#exporting-a-game)
-19. [Importing a game (full snapshot)](#importing-a-game-full-snapshot)
-20. [Host permissions and edge cases](#host-permissions-and-edge-cases)
-21. [Error catalogue](#error-catalogue)
-22. [Decisions log](#decisions-log)
+10. [Starting a game (exposition)](#starting-a-game-exposition)
+11. [Polling game state](#polling-game-state)
+12. [Submitting actions (player round)](#submitting-actions-player-round)
+13. [AFK timeout and forced pass](#afk-timeout-and-forced-pass)
+14. [DM round](#dm-round)
+15. [Death and incapacitation](#death-and-incapacitation)
+16. [End conditions](#end-conditions)
+17. [Host permissions and edge cases](#host-permissions-and-edge-cases)
+18. [Error catalogue](#error-catalogue)
+19. [Decisions log](#decisions-log)
 
 ---
 
@@ -38,9 +35,9 @@ Nothing here is implemented yet. When implementation diverges from this spec, up
 | Actor | Description |
 |-------|-------------|
 | **User** | A registered account. Authenticates with a bearer token. |
-| **Host** | The user who created the game (`games.host_user_id`). Pays for all LLM calls via their stored API key. Has exclusive rights to start the game and configure lobby settings. |
+| **Host** | The user who created the game (`games.host_user_id`). Pays for all LLM calls via the API key they selected at creation. Has exclusive rights to start the game and configure lobby settings. |
 | **Player** | Any user with a row in `game_players` for a game. May or may not be the host. |
-| **DM** | The LLM narrator. Not a user. Runs on the server using the host's unwrapped API key. Adjudicates actions, narrates rounds, tracks arc, detects deaths and mission completion. |
+| **DM** | The LLM narrator. Not a user. Runs on the server using the host's stored API key. Adjudicates actions, narrates rounds, tracks arc, detects deaths and mission completion. |
 | **Client** | Any HTTP client (browser UI, Discord bot, Bruno). Polls `GET /games/{id}`; no WebSockets in v1. |
 
 | Concept | Description |
@@ -53,7 +50,7 @@ Nothing here is implemented yet. When implementation diverges from this spec, up
 
 ### LLM cost rule
 
-Every LLM call for a game uses the **host's** API key, even when triggered by a non-host player's action submission. The host must have a key configured before creating or starting a game.
+Every LLM call for a game uses the API key selected by the creator during `POST /games` (stored on the game as `api_key_id`), even when triggered by a non-host player's action submission. Joiners never need to configure a key.
 
 ---
 
@@ -69,15 +66,15 @@ Every LLM call for a game uses the **host's** API key, even when triggered by a 
          │                              ▼               │
          │                        player_round          │
          │                              │               │
-         │                    all alive players          │
-         │                    have accepted action       │
+         │                    all alive players         │
+         │                    have accepted action      │
          │                              │               │
          │                              ▼               │
          │                          dm_round            │
          │                              │               │
          │              ┌───────────────┼───────────────┤
          │              ▼               ▼               │
-         │         end condition    no end condition     │
+         │         end condition    no end condition    │
          │         met              met                 │
          │              │               │               │
          │              ▼               └───────────────┘
@@ -197,21 +194,47 @@ Sessions expire after **30 days** of inactivity (configurable). Refresh is out o
   "email": "player@example.com",
   "display_name": "Aria",
   "api_key_configured": false,
-  "api_key_hint": null
+  "api_keys": []
 }
 ```
 
-When a key is stored: `"api_key_configured": true`, `"api_key_hint": "…x7Qa"` (last four characters only).
+When keys are stored, `api_key_configured` is `true` and `api_keys` returns metadata only (never plaintext), e.g.:
+```json
+{
+  "api_key_configured": true,
+  "api_keys": [
+    { "id": "uuid", "vendor": "openai", "last_four": "x7Qa" }
+  ]
+}
+```
 
 ---
 
-### Add or replace API key
+### List API keys
+
+**Request:** `GET /me/settings/api-keys`
+
+**Response `200`:**
+```json
+{
+  "api_key_configured": true,
+  "api_keys": [
+    { "id": "uuid", "vendor": "openai", "last_four": "x7Qa" }
+  ]
+}
+```
+
+**Security contract:** API key endpoints never return full key material; only metadata and `last_four`.
+
+---
+
+### Add API key
 
 **Trigger:** User wants to host games (create or start).
 
 **Request:**
 ```http
-PUT /me/settings/api-key
+POST /me/settings/api-keys
 Authorization: Bearer …
 
 { "api_key": "sk-…" }
@@ -220,40 +243,50 @@ Authorization: Bearer …
 **Server behaviour:**
 1. Validate key format (non-empty, plausible OpenAI key prefix).
 2. Optionally perform a lightweight OpenAI API test call (e.g. list models or minimal completion). On failure → `400 Bad Request` with `{ "detail": "API key rejected by provider: …" }`. Key is **not** stored.
-3. Wrap key with AES-256-GCM using server `KEY_ENCRYPTION_SECRET`.
-4. Store ciphertext in `users.wrapped_api_key`; store last-four hint in `users.api_key_hint`.
+3. Insert `api_keys` row with generated `id`, `vendor = openai`, `api_key`, and `last_four`.
 5. Plaintext key exists only in memory for the duration of this request; never logged.
 
-**Response `200`:**
+**Response `201`:**
 ```json
 {
-  "api_key_configured": true,
-  "api_key_hint": "…x7Qa"
+  "id": "uuid",
+  "vendor": "openai",
+  "last_four": "x7Qa"
 }
 ```
 
-**Client behaviour:** Show hint so user knows a key is saved. Never expect the full key back.
+**Client behaviour:** Show provider and last four so user can identify saved keys. Never expect the full key back.
 
 ---
 
 ### Remove API key
 
-**Request:** `DELETE /me/settings/api-key`
+**Request:** `DELETE /me/settings/api-keys/{key_id}`
 
-**Server behaviour:** Clear `wrapped_api_key` and `api_key_hint`.
+**Server behaviour:** Delete the matching row from `api_keys` for the current user.
 
 **Response `204`.**
 
 **Side effects:**
-- User can no longer `POST /games` or `POST /games/{id}/start`.
-- **In-progress games** where this user is host continue to work until the next LLM call fails (key gone). Practically: host should not delete key while games are active. Server returns `403` on `POST /games/{id}/start` if key missing; ongoing active games attempt LLM and return `502` if key unavailable.
+- If the user has no keys remaining, they can no longer `POST /games`.
+- **In-progress games** where this user is host continue to work until the next LLM call fails (key gone). Practically: host should not delete key while games are active. If the game's selected `api_key_id` is missing at runtime, LLM-backed operations return `502`.
+
+---
+
+### API key storage schema (v1)
+
+Each stored key record contains:
+- `id` (UUID)
+- `api_key` (stored secret; never returned by API)
+- `last_four` (string)
+- `vendor` (`openai` only in v1)
 
 ---
 
 ### Flow summary: new host onboarding
 
 ```text
-Register → Login → PUT /me/settings/api-key → GET /me (confirm hint) → POST /games
+Register → Login → POST /me/settings/api-keys → GET /me/settings/api-keys (confirm metadata) → POST /games
 ```
 
 A user who only joins games others host **does not** need an API key.
@@ -262,10 +295,10 @@ A user who only joins games others host **does not** need an API key.
 
 ## Creating a game
 
-**Trigger:** Authenticated user with API key configured wants to host a new game.
+**Trigger:** Authenticated user with at least one stored API key wants to host a new game and chooses which key to use.
 
 **Preconditions:**
-- `api_key_configured = true` on the requesting user.
+- Requesting user has at least one stored API key (`api_key_configured = true`).
 - User is not required to be free of other games (a user may host or play multiple games).
 
 **Request:**
@@ -275,7 +308,7 @@ Authorization: Bearer …
 
 {
   "seed": "A haunted space station where the crew discovers an ancient signal",
-  "max_players": 4,
+  "api_key_id": "uuid",
   "turn_timeout_hours": 48
 }
 ```
@@ -283,16 +316,18 @@ Authorization: Bearer …
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `seed` | yes | — | Free-text prompt for exposition generation at start. 10–2000 characters. |
-| `max_players` | no | `4` | Maximum players including host. Range 1–8. |
+| `api_key_id` | yes | — | ID of one of the creator's stored API keys. This key is used for all LLM calls in the game. |
 | `turn_timeout_hours` | no | `48` | Hours before AFK auto-pass (see [AFK flow](#afk-timeout-and-forced-pass)). Host can change in lobby. |
 
 **Server behaviour:**
-1. Verify API key configured → else `403 Forbidden`.
+1. Verify requester owns `api_key_id` in `api_keys` → else `403 Forbidden`.
 2. Generate `game_id` (UUID) and `join_code` (8-character alphanumeric, uppercase, unique).
 3. Insert `games` row:
    - `host_user_id` = requester
+   - `api_key_id` = requested `api_key_id`
+   - `api_key_user_id` = requester (owner of selected key)
    - `status` = `lobby`, `phase` = `lobby`
-   - `seed`, `max_players`, `turn_timeout_hours`
+   - `seed`, `turn_timeout_hours`
    - `exposition` = null (generated at start)
    - `story_data` = `{ "beats": [] }`
    - `round_number` = 0
@@ -314,7 +349,6 @@ Authorization: Bearer …
   "status": "lobby",
   "phase": "lobby",
   "seed": "…",
-  "max_players": 4,
   "turn_timeout_hours": 48,
   "host_user_id": "user-uuid",
   "player_count": 1,
@@ -335,16 +369,15 @@ There is no separate "share" API. Sharing is **client-side**: the host communica
 https://ghostloom.com/join/H7K2M9XP
 ```
 
-The client extracts `H7K2M9XP` and calls `POST /games/join` (see below).
+The client extracts `H7K2M9XP`, resolves it to a `game_id`, and calls `POST /games/{game_id}/join`.
 
 **What is shareable:**
-- `join_code` — anyone with the code can join while the game is in lobby and not full.
-- `game_id` — UUID; same join rules via `POST /games/{game_id}/join`.
+- `join_code` — anyone with the code can join while the game is in lobby and party size is below the v1 cap (5 total players including host).
+- `game_id` — UUID used by the canonical join endpoint `POST /games/{game_id}/join`.
 
 **What is not shareable:**
 - Bearer tokens
 - API keys
-- Export files containing secrets (export never includes these)
 
 **Visibility:** `GET /games` returns only games the authenticated user is a member of. There is no public game browser in v1.
 
@@ -352,33 +385,19 @@ The client extracts `H7K2M9XP` and calls `POST /games/join` (see below).
 
 ## Joining a game
 
-### By join code (preferred)
-
-**Request:**
-```http
-POST /games/join
-Authorization: Bearer …
-
-{ "join_code": "H7K2M9XP" }
-```
-
-### By game ID
-
 **Request:**
 ```http
 POST /games/{game_id}/join
 Authorization: Bearer …
 ```
 
-Both endpoints behave identically after resolving `game_id`.
-
 **Preconditions:**
-- Game `status` = `lobby`. → else `409 Conflict` ("Game has already started").
-- `player_count < max_players`. → else `409 Conflict` ("Game is full").
+- Game `status` = `lobby`. → else `409 Conflict` ("Joining is closed: this game has already started.").
+- `player_count < 5`. → else `409 Conflict` ("Game is full (max party size is 5).").
 - User not already a member. → else `409 Conflict` ("Already in this game").
 
 **Server behaviour:**
-1. Resolve game by `join_code` or `game_id`.
+1. Resolve game by `game_id` (client may use a prior lookup from share code to `game_id`).
 2. Insert `game_players` row:
    - `character_slot_id` = null
    - `character_name` = null
@@ -416,7 +435,7 @@ Both endpoints behave identically after resolving `game_id`.
 
 **Client behaviour:** Navigate to lobby UI. Prompt player to claim a character slot after host starts (slots do not exist until start) — **or** let player draft name/description in lobby that will be validated against slots at start. See [Character creation](#character-creation-and-customisation).
 
-**Late join:** Not supported in v1. Once `status` = `active`, join returns `409`.
+**Late join:** Not supported in v1. Once `status` = `active`, join returns `409` with a descriptive message indicating that joining closes after the host starts the game.
 
 ---
 
@@ -446,7 +465,7 @@ Authorization: Bearer …
 1. Set `game_players.status` = `abandoned`.
 2. Set `game_players.is_ai_controlled` = true.
 3. Do **not** delete the row — character remains in the story.
-4. If leaver is host → transfer `host_user_id` to earliest remaining `status = active` player. New host does **not** need their own API key; LLM continues using original host's wrapped key stored on the game (`games.api_key_user_id` — set at start to host at that time). See [Decisions log](#decisions-log).
+4. If leaver is host → transfer `host_user_id` to earliest remaining `status = active` player. New host does **not** need their own API key; LLM continues using the creator-selected key pinned on the game (`games.api_key_id`). See [Decisions log](#decisions-log).
 5. Delete any `pending_actions` for this user in the current round (if they had a rejected action in progress, it is cleared).
 6. If the current round is `player_round` and all remaining alive active/AI players now have accepted actions, trigger [DM round](#dm-round) immediately.
 
@@ -524,7 +543,7 @@ When the host starts, the server generates exposition **and** `playable_characte
 }
 ```
 
-Slot count = `player_count` at start time (one slot per current player). Names are starting suggestions; players customise.
+Slot count is **not pre-determined** at create time. At start, slot count = current `player_count` (one slot per current player), with a hard cap of 5 players total. Names are starting suggestions; players customise.
 
 `playable_characters` is stored inside `games.exposition` JSONB (extends the `Exposition` model).
 
@@ -591,82 +610,6 @@ Validation is **setting-bound**, not plot-bound. A character may be ambitious or
 
 ---
 
-## Importing a character from another game
-
-Distinct from [full game import](#importing-a-game-full-snapshot). This flow brings **one character's identity** from a prior game into a new game's lobby.
-
-### Export character (source game)
-
-**Request:**
-```http
-GET /games/{game_id}/players/me/export
-Authorization: Bearer …
-```
-
-**Preconditions:**
-- User is a member of the source game.
-- User has a character with `character_name` set (lobby draft or validated).
-
-**Response `200`:**
-```json
-{
-  "format": "ghostloom-character",
-  "version": 1,
-  "exported_at": "…",
-  "character": {
-    "name": "Dr. Elena Vasquez",
-    "description": "Xenobiologist, skeptical, carries a battered datapad.",
-    "source_game_seed": "A haunted space station…",
-    "source_genre": "Sci-fi horror",
-    "source_tone": "Tense, claustrophobic"
-  }
-}
-```
-
-No plot state, inventory, beats, or secrets are exported. Only identity flavour.
-
----
-
-### Import character (target game lobby)
-
-**Request:**
-```http
-POST /games/{game_id}/players/me/import
-Authorization: Bearer …
-
-{
-  "character_export": { … },
-  "adapt_to_setting": true
-}
-```
-
-**Preconditions:**
-- Target game `status` = `lobby`.
-- User is a member.
-
-**Server behaviour:**
-1. Parse and validate `format` = `ghostloom-character`, `version` = 1.
-2. Store as draft `character_name` and `character_description` on `game_players`.
-3. If `adapt_to_setting` = true and exposition exists (it does not in lobby — adaptation deferred) → **at game start**, when slots are generated, the server runs `adapt_character(exposition, imported_character)` to produce a slot-consistent description. Player reviews adapted description in the claim phase.
-4. If `adapt_to_setting` = false → character is kept as-is; validated strictly at slot claim against new exposition.
-
-**Response `200`:**
-```json
-{
-  "character_name": "…",
-  "character_description": "…",
-  "adaptation_pending": true
-}
-```
-
-**At start (host calls start):**
-- For players with imported characters and `adapt_to_setting` = true, LLM rewrites description to fit the new seed while preserving personality and core identity.
-- Player sees adapted text during slot claim; may edit before validation.
-
-**Cross-genre example:** Space xenobiologist → "scholar of forbidden texts" in a fantasy seed. Player can reject adaptation and edit manually.
-
----
-
 ## Starting a game (exposition)
 
 **Trigger:** Host decides the party is ready.
@@ -680,24 +623,22 @@ Authorization: Bearer …
 **Preconditions:**
 - Requester is `host_user_id`.
 - Game `status` = `lobby`.
-- Host has `api_key_configured` = true.
+- Game has a valid `api_key_id` selected at creation and still available.
 - `player_count` ≥ 1 (solo play allowed).
 - Every current player has non-empty `character_name` and `character_description` (draft from lobby). → else `409` listing players not ready.
 
 **Server behaviour:**
-1. Set `games.api_key_user_id` = current `host_user_id` (key owner for all LLM calls in this game).
-2. Call `Narrator.generate_exposition(seed)` → exposition JSON.
+1. Call `Narrator.generate_exposition(seed)` using game `api_key_id` → exposition JSON.
 3. Generate `playable_characters` array with exactly `player_count` slots, informed by exposition and each player's draft name/description.
-4. For imported characters with `adapt_to_setting`, run adaptation (see above).
-5. Append opening narrator beat to `story_data.beats` (scene-setting, 1–2 sentences).
-6. Update game:
+4. Append opening narrator beat to `story_data.beats` (scene-setting, 1–2 sentences).
+5. Update game:
    - `status` = `active`
    - `phase` = `player_round`
    - `round_number` = 1
    - `arc_phase` = `beginning`
    - `round_deadline_at` = now() + `turn_timeout_hours`
    - `exposition` = generated exposition including `playable_characters`
-7. Do **not** auto-claim slots — players must `PATCH` to claim and validate.
+6. Do **not** auto-claim slots — players must `PATCH` to claim and validate.
 
 **Response `200`:** Full game state (see [Polling](#polling-game-state)).
 
@@ -772,7 +713,28 @@ Authorization: Bearer …
 
 **Poll interval:** Client chooses (e.g. every 3–5 seconds in player round, slower in lobby). Server does not push.
 
-**During `dm_round`:** Response may show `"phase": "dm_round"` briefly. Client should disable input and poll until `player_round` or `ended`.
+### Poll result types during active play
+
+The poll endpoint follows the canonical `GET /games/{game_id}` round-state contract in [BIG_CHANGE.md](./BIG_CHANGE.md#canonical-contract-single-source-of-truth):
+
+1. **Actions pending**
+   - `phase`: `player_round`
+   - `round_state.status`: `actions_pending`
+   - Includes per-player `action_submitted` booleans (no other players' action text).
+2. **All actions submitted, story updating**
+   - `phase`: `dm_round`
+   - `round_state.status`: `resolving_round`
+   - Indicates the accepted action set is locked and narration/progress evaluation is running.
+3. **Round resolved**
+   - `phase`: `player_round` (next round) or `ended`
+   - `round_state.status`: `resolved`
+   - Includes newly appended beats and updated player/game state.
+4. **Round resolution failed**
+   - `phase`: `resolution_failed`
+   - `round_state.status`: `resolution_failed`
+   - Includes `error_code`, `error_message`, `retryable`, and retry metadata.
+
+**During `dm_round`:** Client should disable action input and continue polling until `player_round`, `ended`, or `resolution_failed`.
 
 **Ended game:** Same endpoint; `status` = `ended`, `end_reason` = `all_dead` | `mission_complete`. All mutation endpoints return `409`.
 
@@ -787,7 +749,7 @@ Each round, every **alive** player with `status` in (`active`, `abandoned` with 
 - **Act:** free-text action.
 - **Pass:** explicit pass; always accepted without LLM adjudication.
 
-**Critical rule — immediate adjudication:** When a player submits an **act**, the server validates it against the world setting **immediately**, before other players finish. The client receives accept or reject and can retry on reject. This supersedes the batch-adjudication wording in BIG_CHANGE.md.
+**Critical rule — immediate adjudication:** When a player submits an **act**, the server validates it against the world setting **immediately**, before other players finish. The client receives accept or reject and can retry on reject.
 
 Rejected actions are never stored as beats and do not count as having acted.
 
@@ -837,7 +799,10 @@ Authorization: Bearer …
        "round_number": 3
      }
      ```
-4. After accept, check if all alive players (including AI-controlled) have accepted actions. If yes → run [DM round](#dm-round) synchronously and return full game state in the same response (see below).
+4. After accept, check if all alive players (including AI-controlled) have accepted actions. If yes:
+   - atomically transition game `phase` to `dm_round`,
+   - enqueue/trigger [DM round](#dm-round) processing asynchronously,
+   - return accepted response immediately with `round_transition_started: true`.
 
 **Retry after rejection:**
 - Player calls `POST /games/{game_id}/actions` again with revised text.
@@ -865,15 +830,16 @@ POST /games/{game_id}/actions
 
 ### Response when DM round triggers on last acceptance
 
-When the last player's action is accepted, the server runs the DM round before responding:
+When the last player's action is accepted, the server should acknowledge quickly and start DM resolution asynchronously:
 
-**Response `200`:**
+**Response `202`:**
 ```json
 {
   "status": "accepted",
   "action_type": "act",
-  "round_advanced": true,
-  "game": { … full game state, round_number may increment, new narrator beat … }
+  "round_transition_started": true,
+  "phase": "dm_round",
+  "round_number": 3
 }
 ```
 
@@ -929,7 +895,7 @@ On **every** `GET /games/{id}`, `POST /actions`, and a periodic server-side chec
 
 **Trigger:** All alive players (active or AI-controlled) have an accepted action for the current round.
 
-**Server behaviour (synchronous, single request):**
+**Server behaviour (asynchronous, idempotent job):**
 
 1. Set `games.phase` = `dm_round` (visible to pollers).
 2. Collect all accepted `pending_actions` for this `round_number`.
@@ -939,9 +905,9 @@ On **every** `GET /games/{id}`, `POST /actions`, and a periodic server-side chec
    - Rejected actions are not in this list.
 4. Append narrator beat to `story_data.beats`. Append player beats for each non-pass act (attributed by `character_name`).
 5. Call `Narrator.evaluate_progress(story)`:
-   - Update `arc_phase` if appropriate.
-   - Set `is_alive` = false for any characters who died.
-   - Determine `mission_complete` boolean.
+   - Update `arc_phase` if appropriate, using narrative context from accumulated beats.
+   - Set `is_alive` = false for any characters the narrator judges have died.
+   - Determine `mission_complete` boolean when the narrator judges story goals/arc conclusion are achieved.
 6. **End check** (see [End conditions](#end-conditions)).
 7. If game continues:
    - Increment `round_number`.
@@ -951,16 +917,56 @@ On **every** `GET /games/{id}`, `POST /actions`, and a periodic server-side chec
 8. If game ended:
    - Set `status` = `ended`, `phase` = `ended`, `end_reason` accordingly.
    - Clear `pending_actions`.
+9. If resolution fails (provider unavailable, credits exhausted, timeout, or internal error):
+   - Keep accepted `pending_actions` intact for the round.
+   - Set `phase` = `resolution_failed`.
+   - Store failure metadata for polling: `error_code`, `error_message`, `retryable`, `attempt_count`, `failed_at`.
 
-**Client behaviour:** Poll until `phase` returns to `player_round` or `ended`. Display new beats.
+**Client behaviour:** Poll until `phase` returns to `player_round`, reaches `ended`, or enters `resolution_failed`. Display new beats only after resolve.
 
 **Duration:** LLM calls may take several seconds. Clients should show a "DM is narrating…" state when `phase` = `dm_round`.
 
 ---
 
+## Retry round resolution after failure
+
+**Purpose:** Recover from transient DM narration failures without losing accepted player actions.
+
+**Request:**
+```http
+POST /games/{game_id}/rounds/{round_number}/retry-resolution
+Authorization: Bearer …
+```
+
+**Preconditions:**
+- User is game member (`403` otherwise).
+- `phase` = `resolution_failed` (`409` otherwise).
+- Path `round_number` matches game's current unresolved round (`409` on mismatch).
+- Last failure is `retryable = true` (`422` if not retryable).
+
+**Server behaviour:**
+1. Acquire lock on game row and re-check preconditions.
+2. Set `phase` = `dm_round`.
+3. Increment failure `attempt_count`.
+4. Enqueue/trigger DM round job idempotently.
+5. Return `202` with:
+   ```json
+   {
+     "status": "retry_started",
+     "phase": "dm_round",
+     "round_number": 3
+   }
+   ```
+
+**Idempotency:**
+- If already `dm_round`, return current processing state (do not enqueue duplicate work).
+- If round already resolved, return `409` "Round already resolved".
+
+---
+
 ## Death and incapacitation
 
-- Death is determined by `evaluate_progress` during the DM round (LLM judges outcomes of dangerous actions).
+- Death is determined by `evaluate_progress` during the DM round (LLM narrator judges outcomes contextually from story beats; no HP/stats system in v1).
 - `game_players.is_alive` set to `false` permanently for this game (no respawn in v1).
 - Dead characters:
   - Cannot submit actions.
@@ -985,7 +991,7 @@ After each DM round, the server evaluates:
 
 ### Mission complete
 
-**Condition:** `evaluate_progress` returns `mission_complete: true` (story objective from exposition `conflict_seed` / `stakes` fulfilled; arc reached satisfying conclusion).
+**Condition:** `evaluate_progress` returns `mission_complete: true` because the narrator judges the story objective from exposition `conflict_seed` / `stakes` has been fulfilled and the arc has reached a satisfying conclusion (contextual judgement from beats, not numeric counters).
 
 **Result:**
 - `status` = `ended`
@@ -1001,7 +1007,6 @@ If neither condition met → next `player_round`.
 | Endpoint | Behaviour |
 |----------|-----------|
 | `GET /games/{id}` | Allowed. Full history. |
-| `GET /games/{id}/export` | Allowed. |
 | `POST /actions` | `409` "Game has ended" |
 | `PATCH /players/me` | `409` |
 | `POST /join` | `409` |
@@ -1011,85 +1016,15 @@ If neither condition met → next `player_round`.
 
 ---
 
-## Exporting a game
-
-**Request:**
-```http
-GET /games/{game_id}/export
-Authorization: Bearer …
-```
-
-**Preconditions:** User is a game member.
-
-**Response `200`:**
-```json
-{
-  "format": "ghostloom-game",
-  "version": 1,
-  "exported_at": "…",
-  "game": {
-    "seed": "…",
-    "exposition": { },
-    "story_data": { },
-    "arc_phase": "middle",
-    "round_number": 4,
-    "players": [
-      {
-        "character_name": "…",
-        "character_description": "…",
-        "is_alive": true
-      }
-    ],
-    "status": "active",
-    "phase": "player_round",
-    "end_reason": null
-  }
-}
-```
-
-**Never includes:** API keys, session tokens, `user_id`, email, wrapped keys.
-
-**Use cases:** Backup, migration, sharing story snapshots. Import creates a **new** game.
-
----
-
-## Importing a game (full snapshot)
-
-**Request:**
-```http
-POST /games/import
-Authorization: Bearer …
-
-{ "export": { … } }
-```
-
-**Preconditions:**
-- Requester has `api_key_configured` = true (becomes host).
-
-**Server behaviour:**
-1. Validate `format` = `ghostloom-game`, supported `version`.
-2. Create new `games` row; requester is host and sole initial member.
-3. Copy `seed`, `exposition`, `story_data`, `arc_phase`, `round_number`, `status`, `phase`, `end_reason` from snapshot.
-4. Create `game_players` rows from snapshot player characters (no user mapping — importer must invite others again).
-5. Generate new `join_code` and `game_id`.
-6. Set `games.api_key_user_id` = importer.
-
-**Response `201`:** New game summary.
-
-**Note:** Imported active games do not restore other human players. Characters exist as data; humans must rejoin and reclaim slots in lobby if imported into lobby, or importer plays alone until others join. **v1 simplification:** Import always sets `status` = `lobby`, `phase` = `lobby`, `round_number` preserved in snapshot metadata but play restarts from imported story state in `story_data`. Players re-invited via join code.
-
----
-
 ## Host permissions and edge cases
 
 | Action | Host only? |
 |--------|------------|
 | `POST /games/{id}/start` | yes |
-| `PATCH /games/{id}` (timeout, max_players) | yes, lobby only |
+| `PATCH /games/{id}` (timeout) | yes, lobby only |
 | `POST /games/{id}/join` | any user |
 | `POST /games/{id}/leave` | any member |
 | `POST /games/{id}/actions` | any alive active player |
-| `GET /games/{id}/export` | any member |
 
 ### Host transfer
 
@@ -1114,6 +1049,10 @@ Submitting the same accepted action again → `409`. Submitting after round adva
 
 `POST /actions` → `409` "DM round in progress".
 
+### Game in `resolution_failed`
+
+`POST /actions` → `409` "Round resolution failed; retry required".
+
 ---
 
 ## Error catalogue
@@ -1126,6 +1065,7 @@ Submitting the same accepted action again → `409`. Submitting after round adva
 | `404` | Not found | Unknown game or join code |
 | `409` | Conflict | Wrong phase, already acted, game full, game started, game ended |
 | `422` | Action rejected | LLM rejected character or action (body includes `reason`) |
+| `422` | Resolution not retryable | Retry requested for a non-retryable resolution failure |
 | `502` | Bad gateway | LLM provider error |
 | `503` | Service unavailable | Database unreachable |
 
@@ -1137,19 +1077,20 @@ Explicit choices made in this document (for review):
 
 | # | Decision | Rationale |
 |---|----------|-----------|
-| 1 | **Immediate action adjudication** on submit, not batch at DM round | Better UX; player can retry before others finish. Updates BIG_CHANGE.md DM-round wording. |
+| 1 | **Immediate action adjudication** on submit, not batch at DM round | Better UX; player can retry before others finish. |
 | 2 | **Slot-based characters** generated at start | Ties players to exposition; avoids orphan characters. |
 | 3 | **Lobby draft → validate at slot claim** | Exposition does not exist until start; cannot validate earlier. |
 | 4 | **Join code** for sharing | Simple, no invite table. |
 | 5 | **AI takeover on leave during active play** | Party continues; character stays in story. |
 | 6 | **Host transfer on host leave** | Someone can start if host leaves in lobby; active games keep a nominal host. |
-| 7 | **`api_key_user_id` pinned at start** | New host after transfer does not need their own key for ongoing game. |
+| 7 | **`api_key_id` selected at create and pinned on game** | New host after transfer does not need their own key for ongoing game. |
 | 8 | **AFK → forced pass** at `turn_timeout_hours` | Unblocks rounds; default 48h. |
-| 9 | **Character import** is separate from game import | Different use case; exports identity only. |
-| 10 | **No late join** after start | Reduces complexity in v1. |
-| 11 | **Action text hidden from other players** until DM round | Reduces meta-gaming. |
-| 12 | **Solo play allowed** | One player + DM is valid. |
-| 13 | **Full game import resets to lobby** | Humans must rejoin; story state preserved. |
+| 9 | **No late join** after start | Reduces complexity in v1. |
+| 10 | **Action text hidden from other players** until DM round | Reduces meta-gaming. |
+| 11 | **Solo play allowed** | One player + DM is valid. |
+| 12 | **Max party size fixed at 5** | Keeps v1 lobby/join logic simple and predictable. |
+| 13 | **Asynchronous DM resolution after last action** | Avoids long tail latency on final submit; clients observe progress via poll states. |
+| 14 | **Explicit `resolution_failed` phase + retry endpoint** | Prevents indefinite "processing" states and gives deterministic recovery path. |
 
 ---
 
@@ -1160,10 +1101,11 @@ This flows document requires these additions to the data model in BIG_CHANGE.md:
 ```text
 games
   join_code              — unique, 8 chars
-  max_players            — int, default 4
   turn_timeout_hours     — int, default 48
   round_deadline_at      — timestamp, nullable
-  api_key_user_id        — user whose key pays for LLM; set at start
+  api_key_id             — selected creator key for LLM calls; set at creation
+  api_key_user_id        — owner of selected key; set at creation
+  phase                  — includes `resolution_failed`
 
 game_players
   character_slot_id      — nullable, references exposition.playable_characters[].id
@@ -1178,6 +1120,15 @@ pending_actions
   round_number           — int
   forced_by_timeout      — boolean, default false
   UNIQUE (game_id, user_id, round_number)  — one slot per player per round
+
+round_resolution_failures
+  game_id                — FK
+  round_number           — int
+  error_code             — enum/string
+  error_message          — text
+  retryable              — boolean
+  attempt_count          — int
+  failed_at              — timestamp
 ```
 
 ### Narrator methods (revised)
@@ -1186,7 +1137,6 @@ pending_actions
 |--------|-------------|
 | `generate_exposition(seed)` | Game start |
 | `generate_playable_characters(exposition, player_drafts)` | Game start |
-| `adapt_character(exposition, imported_character)` | Game start, for imports |
 | `validate_character(exposition, slot, name, description)` | Slot claim |
 | `adjudicate_action(story, exposition, character, action_text)` | **Each act submit** |
 | `generate_ai_action(story, exposition, character)` | AI-controlled player round |
@@ -1203,11 +1153,10 @@ Map flows to implementation order in BIG_CHANGE.md:
 |------|---------------|
 | 2. Auth | Register, login, logout, session validation |
 | 3. BYOK | API key add/remove, host onboarding |
-| 4. Game lobby | Create, share, join, leave (lobby), character PATCH, import character |
+| 4. Game lobby | Create, share, join, leave (lobby), character PATCH |
 | 5. Turn loop | Start, slot claim, submit action, immediate adjudication, AFK, DM round |
 | 6. End conditions | Death, mission complete, ended read-only |
-| 7. Export/import | Game export, game import, character export |
 
 ---
 
-*Last updated: 2026-07-06. Review decisions in [Decisions log](#decisions-log) before implementation.*
+*Last updated: 2026-07-08. Review decisions in [Decisions log](#decisions-log) before implementation.*
