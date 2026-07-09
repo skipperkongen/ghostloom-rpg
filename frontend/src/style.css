@@ -1,0 +1,103 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  color: #1a1a2e;
+}
+
+#app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  margin-bottom: 16px;
+}
+
+h1, h2, h3 {
+  margin-top: 0;
+}
+
+nav {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+button, .btn {
+  background: #667eea;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button.secondary {
+  background: #6c757d;
+}
+
+button.danger {
+  background: #dc3545;
+}
+
+input, textarea, select {
+  width: 100%;
+  padding: 10px;
+  margin: 6px 0 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+label {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.error {
+  color: #dc3545;
+  margin: 8px 0;
+}
+
+.muted {
+  color: #666;
+  font-size: 13px;
+}
+
+.beat {
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.beat.player {
+  color: #4a5568;
+}
+
+.beat.narrator {
+  color: #2d3748;
+  font-style: italic;
+}
+
+.player-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.hidden {
+  display: none;
+}

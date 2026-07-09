@@ -1,9 +1,10 @@
-{
-  "version": "1",
-  "name": "Ghostloom RPG",
-  "type": "collection",
-  "ignore": [
-    "node_modules",
-    ".git"
-  ]
+meta {
+  name: Ghostloom
+  type: http
+  seq: 1
+}
+
+vars {
+  baseUrl: http://localhost:8000
+  token: 
 }

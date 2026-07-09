@@ -1,7 +1,7 @@
 [project]
 name = "ghostloom"
-version = "1.0.0"
-description = "A stateless narrative loop service using LLM"
+version = "2.0.0"
+description = "Multiplayer narrative game service with PostgreSQL and BYOK"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.104.1",
@@ -10,6 +10,12 @@ dependencies = [
     "pydantic-settings==2.1.0",
     "cryptography==41.0.7",
     "openai>=1.40.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "psycopg[binary]>=3.1.0",
+    "bcrypt>=4.1.0",
+    "httpx>=0.25.0,<0.28",
+    "email-validator>=2.0.0",
 ]
 
 [build-system]
@@ -22,6 +28,7 @@ packages = ["app"]
 [dependency-groups]
 dev = [
     "ruff>=0.14.10",
+    "pytest>=8.0.0",
 ]
 
 [tool.ruff]

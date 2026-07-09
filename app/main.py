@@ -1,69 +1,27 @@
-"""FastAPI application for the story engine service."""
+"""FastAPI application."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.models import (
-    ContinueStoryRequest,
-    InitStoryRequest,
-    StoryResponse,
-)
-from app.narrator import Narrator, DummyNarrator
+from app.config import settings
+from app.routers import auth, games, health, me, settings as settings_router
 
-
-class Settings(BaseSettings):
-    """Application settings from environment variables."""
-
-    llm_api_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("OPENAI_API_KEY", "llm_api_key"),
-    )
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore",
-    )
-
-
-# Initialize FastAPI app
 app = FastAPI(
-    title="Story Engine Service",
-    description="A stateless narrative loop service using LLM",
-    version="1.0.0",
+    title="Ghostloom API",
+    description="Multiplayer narrative game service",
+    version="2.0.0",
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins. In production, specify exact origins.
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Global settings and LLM client
-settings = Settings()
-narrator: Narrator = DummyNarrator(llm_api_key=settings.llm_api_key)
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
-
-
-@app.post("/init", response_model=StoryResponse)
-def init(req: InitStoryRequest) -> StoryResponse:
-    story = narrator.initialise_story(req.seed)
-
-    return StoryResponse(story=story)
-
-
-@app.post("/continue", response_model=StoryResponse)
-def continue_(req: ContinueStoryRequest) -> StoryResponse:
-    story = narrator.transition(req.story, req.user_input)
-
-    return StoryResponse(story=story)
+app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(me.router)
+app.include_router(settings_router.router)
+app.include_router(games.router)

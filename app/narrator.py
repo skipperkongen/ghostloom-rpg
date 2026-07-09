@@ -3,17 +3,18 @@
 import json
 from abc import ABC, abstractmethod
 
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
 from app.models import Beat, Story
 from app.models.story import Exposition
+from app.narrator_types import AcceptedAction, AdjudicationResult, ProgressResult
 
 
 class Narrator(ABC):
     """Abstract base class for LLM clients."""
 
     @abstractmethod
-    def generate_exposition(self, seed: str) -> Exposition:
+    def generate_exposition(self, seed: str, party: list[dict] | None = None) -> Exposition:
         "Generate a exposition for the story."
         pass
 
@@ -22,36 +23,33 @@ class Narrator(ABC):
         "Generate a narrator beat for the story"
         pass
 
-    def initialise_story(self, seed: str) -> Story:
-        """
-        Initialize a new story from a seed prompt.
+    @abstractmethod
+    def adjudicate_action(
+        self,
+        story: Story,
+        exposition: Exposition,
+        character: dict,
+        action_text: str,
+    ) -> AdjudicationResult:
+        pass
 
-        Args:
-            seed: User's initial story wish or prompt
+    @abstractmethod
+    def generate_dm_beat(self, story: Story, results: list[AcceptedAction]) -> Beat:
+        pass
 
-        Returns:
-            Story
-        """
+    @abstractmethod
+    def evaluate_progress(self, story: Story, alive_user_ids: list[str]) -> ProgressResult:
+        pass
+
+    def initialise_story(self, seed: str, party: list[dict] | None = None) -> Story:
         story = Story(
-            exposition=self.generate_exposition(seed),
+            exposition=self.generate_exposition(seed, party),
             beats=[],
         )
         story.beats.append(self.generate_narrator_beat(story))
         return story
 
     def transition(self, story: Story, user_input: str) -> Story:
-        """
-        Continue the story based on user action.
-        - Adds two beats (user + narrator)
-        Not idempotent, modifies the story
-
-        Args:
-            story: The story so far
-            input: The player's input or action in the story
-
-        Returns:
-            The continued story after processing the user's input, with a user and narrator beat added
-        """
         story.beats.append(Beat(role="player", text=user_input))
         story.beats.append(self.generate_narrator_beat(story))
         return story
@@ -62,15 +60,12 @@ class DummyNarrator(Narrator):
         self._llm_api_key = llm_api_key
         self._client = OpenAI(api_key=self._llm_api_key) if self._llm_api_key else None
 
-    def generate_exposition(self, seed: str) -> Exposition:
-        """Generate an exposition.
-
-        If an LLM API key is configured, use OpenAI for rich exposition.
-        Otherwise, fall back to a simple, local exposition so the app
-        still works without any external dependencies.
-        """
+    def generate_exposition(self, seed: str, party: list[dict] | None = None) -> Exposition:
         if not self._client:
-            # Offline / no‑LLM fallback
+            party_desc = ""
+            if party:
+                names = ", ".join(p.get("character_name", "Adventurer") for p in party)
+                party_desc = f" The party includes: {names}."
             return Exposition(
                 time="An undefined moment in time",
                 place="A loosely sketched setting born from your imagination",
@@ -78,60 +73,47 @@ class DummyNarrator(Narrator):
                     "The world mostly follows common-sense rules, but bends "
                     "whenever it makes the story more interesting."
                 ),
-                protagonist="You, an inquisitive protagonist exploring this story space",
+                protagonist="A band of adventurers exploring this story space",
                 other_characters=[
-                    "A shifting cast of characters who appear as needed",
-                ],
+                    p.get("character_name", "An ally") for p in (party or [])
+                ] or ["A shifting cast of characters who appear as needed"],
                 relationships=[
-                    "You feel loosely connected to the people and places you encounter.",
+                    "The party shares a bond forged by circumstance.",
                 ],
-                status_quo="Life ambles along until your latest idea sparks a new adventure.",
+                status_quo="Life ambles along until a new adventure sparks.",
                 backstory=(
-                    f"Your story begins from a simple idea: '{seed}'. "
+                    f"Your story begins from a simple idea: '{seed}'.{party_desc} "
                     "Details fill in as you make choices."
                 ),
-                conflict_seed="Tension emerges whenever you push beyond what is safe or expected.",
-                stakes="If you hesitate, the opportunity for discovery may slip away.",
+                conflict_seed="Tension emerges whenever the party pushes beyond what is safe.",
+                stakes="If the party hesitates, opportunity may slip away.",
                 tone="Curious, flexible, and lightly adventurous.",
                 genre="Freeform interactive fiction",
-                theme_hints=["Curiosity", "Discovery", "Improvisation"],
-                inciting_context="You decide to follow a new thread and see where it leads.",
+                theme_hints=["Curiosity", "Discovery", "Cooperation"],
+                inciting_context="The party decides to follow a new thread and see where it leads.",
                 rules_of_conflict=[
-                    "Consequences follow your choices, but rarely close off all paths.",
-                    "The world reacts just enough to keep things interesting.",
+                    "Consequences follow choices, but rarely close off all paths.",
                 ],
-                foreshadowing=[
-                    "Unseen possibilities linger just outside your current focus.",
-                ],
+                foreshadowing=["Unseen possibilities linger just outside focus."],
+            )
+
+        party_context = ""
+        if party:
+            party_context = "\n\nParty members:\n" + "\n".join(
+                f"- {p.get('character_name', 'Unknown')}: {p.get('profile', {}).get('summary', 'An adventurer')}"
+                for p in party
             )
 
         system_prompt = (
-            "You are a creative storyteller. Generate a detailed story exposition based on the user's seed prompt. "
-            "Return your response as a JSON object matching the required structure. "
-            "IMPORTANT: All string fields must be plain strings, not objects or lists. "
-            "List fields must be arrays of strings."
+            "You are a creative storyteller. Generate a detailed story exposition for a multiplayer adventure. "
+            "Return JSON matching the required structure. All string fields must be plain strings."
         )
-
         user_prompt = (
-            f"Generate a story exposition based on this seed prompt: {seed}\n\n"
-            "Return a JSON object with the following structure:\n"
-            "- time: string (e.g., 'Present day')\n"
-            "- place: string (e.g., 'a mysterious village')\n"
-            "- world_rules: string (e.g., 'Reality follows everyday logic with a hint of magic.')\n"
-            "- protagonist: string (e.g., 'Alex, an aspiring adventurer')\n"
-            "- other_characters: array of strings (e.g., ['Morgan, a helpful guide'])\n"
-            "- relationships: array of strings (e.g., ['Alex and Morgan are friends.'])\n"
-            "- status_quo: string\n"
-            "- backstory: string\n"
-            "- conflict_seed: string\n"
-            "- stakes: string\n"
-            "- tone: string\n"
-            "- genre: string\n"
-            "- theme_hints: array of strings (e.g., ['Discovery', 'Friendship'])\n"
-            "- inciting_context: string\n"
-            "- rules_of_conflict: array of strings (e.g., ['Magic is rare but possible.'])\n"
-            "- foreshadowing: array of strings (e.g., ['Morgan seems to know more than they let on.'])\n\n"
-            "All string fields must be plain text strings, not JSON objects or arrays."
+            f"Generate a story exposition based on this seed: {seed}{party_context}\n\n"
+            "Return JSON with: time, place, world_rules, protagonist (describe the party), "
+            "other_characters (array), relationships (array), status_quo, backstory, conflict_seed, "
+            "stakes, tone, genre, theme_hints (array), inciting_context, rules_of_conflict (array), "
+            "foreshadowing (array)."
         )
 
         response = self._client.chat.completions.create(
@@ -143,70 +125,138 @@ class DummyNarrator(Narrator):
             response_format={"type": "json_object"},
             temperature=0.8,
         )
-
-        response_text = response.choices[0].message.content
-        exposition_data = json.loads(response_text)
-
-        # Create Exposition object from the response
-        return Exposition(**exposition_data)
+        return Exposition(**json.loads(response.choices[0].message.content))
 
     def generate_narrator_beat(self, story: Story) -> Beat:
-        """Generate a narrator beat.
-
-        With an API key, this uses OpenAI for narration.
-        Without one, it produces a lightweight, local continuation so
-        the game loop remains fully playable.
-        """
         if not self._client:
             last_player_input = None
             for beat in reversed(story.beats):
                 if beat.role == "player":
                     last_player_input = beat.text
                     break
-
             if last_player_input:
                 text = (
-                    f"You take a moment to {last_player_input}, and the world subtly "
-                    "shifts in response, opening up new possibilities ahead."
+                    f"The party's actions ripple through the scene as they {last_player_input}, "
+                    "opening new possibilities ahead."
                 )
             else:
-                text = (
-                    "The scene settles around you, waiting for your first decisive move."
-                )
-
+                text = "The scene settles around the party, waiting for their first decisive move."
             return Beat(role="narrator", text=text)
 
-        # Serialize the story to JSON for the prompt
         story_json = story.model_dump_json(indent=2)
+        system_prompt = (
+            "You are a creative storyteller. Generate a SHORT narrator beat (1-2 sentences, 20-40 words). "
+            "Third person, present tense. Plain text only."
+        )
+        response = self._client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Story context:\n\n{story_json}\n\nGenerate the next narrator beat."},
+            ],
+            temperature=0.7,
+            max_tokens=100,
+        )
+        return Beat(role="narrator", text=response.choices[0].message.content.strip())
+
+    def adjudicate_action(
+        self,
+        story: Story,
+        exposition: Exposition,
+        character: dict,
+        action_text: str,
+    ) -> AdjudicationResult:
+        if not action_text or not action_text.strip():
+            return AdjudicationResult(accepted=False, reason="Action text cannot be empty")
+        if len(action_text) > 500:
+            return AdjudicationResult(accepted=False, reason="Action text is too long (max 500 characters)")
+
+        if not self._client:
+            blocked = ["kill everyone", "destroy the world", "god mode"]
+            lower = action_text.lower()
+            for phrase in blocked:
+                if phrase in lower:
+                    return AdjudicationResult(accepted=False, reason="That action is not possible in this world")
+            return AdjudicationResult(accepted=True)
 
         system_prompt = (
-            "You are a creative storyteller. Generate a SHORT, CONCISE narrator beat that continues the story. "
-            "Return your response as a plain text description (not JSON). "
-            "The narration should be written in third person, present tense. "
-            "CRITICAL: Keep each beat to 1-2 sentences maximum (20-40 words). "
-            "Be direct and to the point - focus on the immediate action or consequence, not lengthy descriptions. "
-            "Each beat should advance the story incrementally, leaving room for the player to act."
+            "You are a game master adjudicating a player action. "
+            'Return JSON: {"accepted": boolean, "reason": string|null}. '
+            "Reject actions that break world rules or are impossible. Be fair but consistent."
         )
-
         user_prompt = (
-            f"Given this story context:\n\n{story_json}\n\n"
-            f"Generate a SHORT narrator beat (1-2 sentences, 20-40 words max) that continues the story. "
-            f"Write in third person, present tense. "
-            f"If there was a recent player action, briefly describe the immediate result or consequence. "
-            f"Be concise and direct - avoid lengthy descriptions or multiple events. "
-            f"Return only the narration text, no JSON, no additional formatting. "
+            f"World rules: {exposition.world_rules}\n"
+            f"Character: {character.get('character_name')} - {character.get('profile', {}).get('summary', '')}\n"
+            f"Proposed action: {action_text}\n"
+            "Should this action be accepted?"
         )
-
         response = self._client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.7,
-            max_tokens=100,  # Limit response length to ensure brevity
+            response_format={"type": "json_object"},
+            temperature=0.3,
         )
+        data = json.loads(response.choices[0].message.content)
+        return AdjudicationResult(accepted=bool(data.get("accepted")), reason=data.get("reason"))
 
-        beat_text = response.choices[0].message.content.strip()
+    def generate_dm_beat(self, story: Story, results: list[AcceptedAction]) -> Beat:
+        for result in results:
+            if result.action_type == "act" and result.action_text:
+                story.beats.append(
+                    Beat(
+                        role="player",
+                        text=result.action_text,
+                        user_id=str(result.user_id),
+                        character_name=result.character_name,
+                    )
+                )
+            elif result.action_type == "pass":
+                story.beats.append(
+                    Beat(
+                        role="player",
+                        text=f"{result.character_name} waits and observes.",
+                        user_id=str(result.user_id),
+                        character_name=result.character_name,
+                    )
+                )
+        return self.generate_narrator_beat(story)
 
-        return Beat(role="narrator", text=beat_text)
+    def evaluate_progress(self, story: Story, alive_user_ids: list[str]) -> ProgressResult:
+        if not alive_user_ids:
+            return ProgressResult(all_dead=True, arc_phase="end")
+
+        beat_count = len(story.beats)
+        if beat_count >= 20:
+            return ProgressResult(mission_complete=True, arc_phase="end")
+        if beat_count >= 10:
+            return ProgressResult(arc_phase="middle")
+        return ProgressResult(arc_phase="beginning")
+
+
+ROUND_RESOLUTION_ERRORS = {
+    1001: ("llm_provider_unavailable", "LLM provider is temporarily unavailable or unreachable.", True),
+    1002: ("insufficient_credits", "Provider account has insufficient credits or quota.", True),
+    1003: ("rate_limited", "Provider rate limit was exceeded.", True),
+    1004: ("timeout", "LLM request timed out before completion.", True),
+    1005: ("internal_error", "Internal server error during DM resolution.", True),
+    1006: ("api_key_not_found", "Game references an API key record that no longer exists.", False),
+    1007: ("api_key_not_valid", "Stored API key is rejected by the provider as invalid.", False),
+}
+
+
+def map_openai_error(exc: Exception) -> tuple[int, str, str, bool]:
+    if isinstance(exc, AuthenticationError):
+        return 1007, *ROUND_RESOLUTION_ERRORS[1007]
+    if isinstance(exc, RateLimitError):
+        return 1003, *ROUND_RESOLUTION_ERRORS[1003]
+    if isinstance(exc, APIConnectionError):
+        return 1001, *ROUND_RESOLUTION_ERRORS[1001]
+    if isinstance(exc, APIStatusError):
+        if exc.status_code == 402:
+            return 1002, *ROUND_RESOLUTION_ERRORS[1002]
+        if exc.status_code == 429:
+            return 1003, *ROUND_RESOLUTION_ERRORS[1003]
+    return 1005, *ROUND_RESOLUTION_ERRORS[1005]

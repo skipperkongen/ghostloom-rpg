@@ -1,10 +1,45 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ghostloom
+      POSTGRES_PASSWORD: ghostloom
+      POSTGRES_DB: ghostloom
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghostloom -d ghostloom"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    command: alembic upgrade head
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build: .
     ports:
       - "8000:8000"
     env_file:
       - .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    ports:
+      - "3000:80"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PRIVATE_KEY=to-mystiko-mou
+      API_URL: http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

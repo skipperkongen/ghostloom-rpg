@@ -1,9 +1,11 @@
 """State models for story state management."""
 
 from typing import Literal
+
 from pydantic import BaseModel, Field
 
 Role = Literal["player", "narrator"]
+ArcPhaseLiteral = Literal["beginning", "middle", "end"]
 
 
 class Exposition(BaseModel):
@@ -45,6 +47,8 @@ class Exposition(BaseModel):
 class Beat(BaseModel):
     role: Role = Field(description="The role ")
     text: str = Field(description="A description of what happened")
+    user_id: str | None = Field(default=None, description="Player user id for multiplayer player beats")
+    character_name: str | None = Field(default=None, description="Character name for multiplayer player beats")
 
 
 class Story(BaseModel):
@@ -54,3 +58,4 @@ class Story(BaseModel):
     beats: list[Beat] = Field(
         default_factory=list, description="The beats of the story so far"
     )
+    arc_phase: ArcPhaseLiteral = Field(default="beginning", description="Narrative arc phase")
