@@ -15,6 +15,34 @@ export function setToken(token: string | null) {
   else sessionStorage.removeItem("token");
 }
 
+function formatApiError(data: unknown, status: number): string {
+  if (!data || typeof data !== "object") return `HTTP ${status}`;
+
+  const body = data as Record<string, unknown>;
+  const detail = body.detail ?? body.message;
+
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          const err = item as { msg?: string; loc?: unknown[] };
+          const loc = Array.isArray(err.loc) ? err.loc.filter((p) => p !== "body").join(".") : "";
+          return loc ? `${loc}: ${err.msg}` : (err.msg ?? JSON.stringify(item));
+        }
+        return JSON.stringify(item);
+      })
+      .join("; ");
+  }
+  if (detail && typeof detail === "object") {
+    if ("msg" in detail) return String((detail as { msg: unknown }).msg);
+    return JSON.stringify(detail);
+  }
+
+  return `HTTP ${status}`;
+}
+
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -26,7 +54,7 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || data.message || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(formatApiError(data, res.status));
   return data as T;
 }
 
