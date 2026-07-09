@@ -48,8 +48,10 @@ Replace the stateless single-player story API with a **client-agnostic FastAPI s
 
 ```text
 Client (any)  ──Bearer token──►  FastAPI  ──►  PostgreSQL
-                                    │
-                                    └── Narrator (LLM, per-request host key)
+     │                              │
+     │                              └── Narrator (LLM, per-request host key)
+     │
+     └── Local dev: `web` service (static reference UI on :3000)
 ```
 
 - **Routers** are thin; **services** enforce game rules, membership, phases, and key presence.
@@ -346,34 +348,180 @@ Extend the existing `Narrator` abstraction:
 - `generate_dm_beat(story, results)` — narrate the round
 - `evaluate_progress(story)` — contextually determine deaths and mission completion from beats, and update arc phase
 
+## Local development (Docker Compose)
+
+The repository ships a **Docker Compose** stack so the full system runs locally with one command — no host Postgres or Python install required.
+
+```text
+Browser  →  web (static)  ──►  api (FastAPI)  ──►  postgres
+                                    ▲
+                                    └── migrate (Alembic, one-shot)
+```
+
+### Services
+
+| Service | Image / build | Role |
+|---------|---------------|------|
+| `postgres` | `postgres:16-alpine` | Primary database; data in a named Docker volume |
+| `migrate` | same as `api` | One-shot: waits for Postgres health, runs `alembic upgrade head`, exits |
+| `api` | `Dockerfile` | FastAPI app; starts only after `migrate` succeeds |
+| `web` | `frontend/Dockerfile` (nginx) | Simple static UI for manual testing and API exploration |
+
+`migrate` is a separate compose service (not baked into the API entrypoint) so failed migrations are visible in logs and do not leave a half-started API process.
+
+### Quick start
+
+```bash
+cp .env.example .env   # set DATABASE_URL, SESSION_SECRET, CORS_ORIGINS
+docker compose up --build
+```
+
+| URL | Purpose |
+|-----|---------|
+| `http://localhost:3000` | Web UI (register, lobby, play, settings) |
+| `http://localhost:8000` | API |
+| `http://localhost:8000/docs` | Swagger UI |
+
+`make start`, `make stop`, `make logs`, and `make migrate` wrap the same compose commands.
+
+### Compose wiring
+
+```yaml
+# docker-compose.yml (conceptual)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ghostloom
+      POSTGRES_PASSWORD: ghostloom
+      POSTGRES_DB: ghostloom
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghostloom -d ghostloom"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    command: alembic upgrade head
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    ports: ["3000:80"]
+    environment:
+      API_URL: http://localhost:8000   # browser-visible base URL for fetch()
+    depends_on:
+      - api
+```
+
+### Environment (local)
+
+```bash
+# .env.example
+DATABASE_URL=postgresql+psycopg://ghostloom:ghostloom@postgres:5432/ghostloom
+SESSION_SECRET=dev-only-change-me
+CORS_ORIGINS=http://localhost:3000
+# Optional local fallback while BYOK is being built; not used in production
+OPENAI_API_KEY=
+```
+
+- `DATABASE_URL` uses the compose service hostname `postgres` (not `localhost`) from inside containers.
+- `CORS_ORIGINS` must include the web UI origin so browser `fetch` with bearer tokens works.
+- Secrets stay in `.env` (gitignored); `.env.example` documents required keys only.
+
+### API container
+
+- **Production image** (`Dockerfile`): installs deps, runs `uvicorn app.main:app`.
+- **Migrations**: owned by the `migrate` service; the API image includes Alembic but does not auto-migrate on boot.
+- **Dev override** (optional `docker-compose.override.yml`, gitignored): bind-mount `./app`, run uvicorn with `--reload`.
+
+### Simple frontend (`frontend/`)
+
+A minimal reference client — not the production game product, but enough to exercise the v1 API end-to-end.
+
+**Tech:** static HTML/CSS/JS (or a thin Vite shell) served by nginx; no framework requirement beyond `fetch` and local state.
+
+**Screens / flows:**
+
+| Area | Behaviour |
+|------|-----------|
+| Auth | Register, login, logout; store bearer token in `sessionStorage` |
+| Settings | List API keys (metadata only), add key, delete key |
+| Games | List games, create (seed + `api_key_id`), open game detail |
+| Lobby | Join via game id/link, character questionnaire + name, host starts |
+| Play | Poll `GET /games/{id}` during `dm_round`; submit act/pass in `player_round`; show resolution errors and host retry |
+| Ended | Read-only story view |
+
+The web container injects `API_URL` (or equivalent) at runtime so the same build works against local compose and staged APIs.
+
+### Volumes and reset
+
+- `pgdata` volume persists between `docker compose down`; use `make clean` / `docker compose down -v` to wipe local DB.
+- After a wipe, `migrate` recreates schema on the next `up`.
+
 ## Deployment
 
-The API ships as a **Docker image** and is deployed to a container host (e.g. Coolify).
+Both the API and the reference web UI ship as **Docker images** and deploy to a container host (e.g. Coolify) as separate applications.
+
+### API
 
 - One image runs the FastAPI app; PostgreSQL is a separate service (managed DB or container).
+- Migrations run as a one-shot job before or during deploy (Coolify pre-deploy command, or a dedicated `migrate` service) — not on every API request.
 - Configuration via environment variables (database URL, session secret, CORS origins).
-- **Cross-origin clients** must be allowed: the API may live on a subdomain (e.g. `api.ghostloom.com`) while clients run on other domains or subdomains (e.g. `ghostloom.com`, `ghostloomgame.com`).
-- CORS is configured explicitly — allowed origins come from env (not `*` in production) and include credentials/headers needed for bearer auth.
+
+### Web (reference UI)
+
+- The `frontend/Dockerfile` produces a small **nginx** image serving static HTML/CSS/JS.
+- Deploy as a **second Coolify resource** on its own domain (e.g. `app.ghostloom.com` or `ghostloom.com`), separate from the API.
+- Coolify treats it like any other Dockerfile app: build (or pull from GHCR), expose port 80, attach the public hostname.
+- Set `API_URL` to the **browser-visible** API origin (e.g. `https://api.ghostloom.com`) — not an internal Docker hostname.
+- No database, migrations, or secrets beyond the public API base URL.
+
+### Cross-origin
+
+- **Cross-origin clients** must be allowed: the API may live on a subdomain (e.g. `api.ghostloom.com`) while the web UI and other clients run on other domains or subdomains (e.g. `ghostloom.com`, `ghostloomgame.com`).
+- CORS is configured explicitly on the API — allowed origins come from env (not `*` in production) and include credentials/headers needed for bearer auth. The web UI's public origin must be listed in `CORS_ORIGINS`.
 
 ## CI/CD
 
-On every push to **`main`**, GitHub Actions builds the Docker image and publishes it to **GitHub Container Registry (GHCR)**.
+On every push to **`main`**, GitHub Actions builds Docker images and publishes them to **GitHub Container Registry (GHCR)**.
 
-- Image tag: commit SHA; also tag `latest` on main.
-- Package name: `ghcr.io/<org>/ghostloom-api` (or equivalent org/repo naming).
+| Image | Package (example) | Deployed to |
+|-------|-------------------|-------------|
+| API | `ghcr.io/<org>/ghostloom-api` | Coolify — API app + migrate job |
+| Web | `ghcr.io/<org>/ghostloom-web` | Coolify — static UI app |
+
+- Image tags: commit SHA; also tag `latest` on main.
 - Workflow runs tests/lint before build; failed checks do not publish.
-- Deploy targets (Coolify, etc.) pull the published image — deployment itself is out of band unless wired later.
+- Coolify (or similar) pulls the published images — deployment wiring is out of band unless automated later.
+- The web image build passes `API_URL` at **runtime** via Coolify env vars, not at image build time, so one image works across staging and production.
 
 ## Implementation order
 
 1. Postgres, SQLAlchemy, Alembic, settings
-2. Auth — users, sessions, `GET /me`, bearer dependency
-3. BYOK — crypto service, settings endpoints
-4. Game lobby — create, join, character PATCH, start (exposition)
-5. Turn loop — actions, pass, auto DM round, adjudication
-6. End conditions — death, mission complete
-7. Remove legacy `/init`, `/continue`, and env-based default API key
-8. Dockerfile, CORS config, GHCR publish workflow on push to main
+2. Docker Compose local stack — `postgres`, `migrate`, `api`; `.env.example` with `DATABASE_URL` and `SESSION_SECRET`
+3. Auth — users, sessions, `GET /me`, bearer dependency
+4. BYOK — crypto service, settings endpoints
+5. Game lobby — create, join, character PATCH, start (exposition)
+6. Turn loop — actions, pass, auto DM round, adjudication
+7. End conditions — death, mission complete
+8. Simple frontend — `frontend/` nginx image, auth + lobby + play flows against the API
+9. Remove legacy `/init`, `/continue`, and env-based default API key
+10. Dockerfile polish, CORS config, GHCR publish workflow on push to main
 
 ## Out of scope for v1
 
