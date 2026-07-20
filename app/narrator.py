@@ -10,6 +10,59 @@ from app.models.story import Exposition
 from app.narrator_types import AcceptedAction, AdjudicationResult, ProgressResult
 
 
+def _coerce_to_str(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "; ".join(_coerce_to_str(item) for item in value)
+    if isinstance(value, dict):
+        char1 = value.get("character1")
+        char2 = value.get("character2")
+        if char1 and char2:
+            detail = value.get("description") or value.get("relationship")
+            return f"{char1} and {char2}: {detail}" if detail else f"{char1} and {char2}"
+
+        name = value.get("name") or value.get("character_name")
+        detail = value.get("traits") or value.get("trait") or value.get("description")
+        parts: list[str] = []
+        if name:
+            parts.append(str(name))
+        if detail:
+            if isinstance(detail, list):
+                parts.append(", ".join(str(item) for item in detail))
+            else:
+                parts.append(str(detail))
+        if parts:
+            return " — ".join(parts)
+        return json.dumps(value)
+    return str(value)
+
+
+def _normalize_exposition_data(data: dict) -> dict:
+    normalized = dict(data)
+    for field in (
+        "time",
+        "place",
+        "world_rules",
+        "protagonist",
+        "status_quo",
+        "backstory",
+        "conflict_seed",
+        "stakes",
+        "tone",
+        "genre",
+        "inciting_context",
+    ):
+        if field in normalized:
+            normalized[field] = _coerce_to_str(normalized[field])
+    for field in ("other_characters", "relationships", "theme_hints", "rules_of_conflict", "foreshadowing"):
+        if field in normalized and isinstance(normalized[field], list):
+            normalized[field] = [_coerce_to_str(item) for item in normalized[field]]
+        elif field in normalized:
+            normalized[field] = [_coerce_to_str(normalized[field])]
+    return normalized
+
+
 class Narrator(ABC):
     """Abstract base class for LLM clients."""
 
@@ -106,14 +159,17 @@ class DummyNarrator(Narrator):
 
         system_prompt = (
             "You are a creative storyteller. Generate a detailed story exposition for a multiplayer adventure. "
-            "Return JSON matching the required structure. All string fields must be plain strings."
+            "Return JSON matching the required structure. "
+            "protagonist must be a plain string. "
+            "other_characters, relationships, theme_hints, rules_of_conflict, and foreshadowing "
+            "must be arrays of plain strings, never objects."
         )
         user_prompt = (
             f"Generate a story exposition based on this seed: {seed}{party_context}\n\n"
-            "Return JSON with: time, place, world_rules, protagonist (describe the party), "
-            "other_characters (array), relationships (array), status_quo, backstory, conflict_seed, "
-            "stakes, tone, genre, theme_hints (array), inciting_context, rules_of_conflict (array), "
-            "foreshadowing (array)."
+            "Return JSON with string fields: time, place, world_rules, protagonist, status_quo, "
+            "backstory, conflict_seed, stakes, tone, genre, inciting_context. "
+            "Return string arrays for: other_characters, relationships, theme_hints, "
+            "rules_of_conflict, foreshadowing."
         )
 
         response = self._client.chat.completions.create(
@@ -125,7 +181,8 @@ class DummyNarrator(Narrator):
             response_format={"type": "json_object"},
             temperature=0.8,
         )
-        return Exposition(**json.loads(response.choices[0].message.content))
+        data = json.loads(response.choices[0].message.content)
+        return Exposition(**_normalize_exposition_data(data))
 
     def generate_narrator_beat(self, story: Story) -> Beat:
         if not self._client:
