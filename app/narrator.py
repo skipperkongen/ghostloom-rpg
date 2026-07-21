@@ -5,9 +5,13 @@ from abc import ABC, abstractmethod
 
 from openai import APIConnectionError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
-from app.models import Beat, Story
-from app.models.story import Exposition
-from app.narrator_types import AcceptedAction, AdjudicationResult, ProgressResult
+from app.models.story import Exposition, Story
+from app.narrator_types import (
+    AcceptedAction,
+    AdjudicationResult,
+    InitStoryResult,
+    ProgressResult,
+)
 
 
 def _coerce_to_str(value: object) -> str:
@@ -40,11 +44,11 @@ def _coerce_to_str(value: object) -> str:
 
 def _normalize_exposition_data(data: dict) -> dict:
     normalized = dict(data)
+    normalized.pop("protagonist", None)
     for field in (
         "time",
         "place",
         "world_rules",
-        "protagonist",
         "status_quo",
         "backstory",
         "conflict_seed",
@@ -63,17 +67,23 @@ def _normalize_exposition_data(data: dict) -> dict:
     return normalized
 
 
+def _party_lines(party: list[dict] | None) -> str:
+    if not party:
+        return ""
+    return "\n\nParty members (player characters — do not invent PCs; put NPCs only in other_characters):\n" + "\n".join(
+        f"- {p.get('name', 'Unknown')}: {p.get('description', 'An adventurer')}" for p in party
+    )
+
+
 class Narrator(ABC):
     """Abstract base class for LLM clients."""
 
     @abstractmethod
     def generate_exposition(self, seed: str, party: list[dict] | None = None) -> Exposition:
-        "Generate a exposition for the story."
         pass
 
     @abstractmethod
-    def generate_narrator_beat(self, story: Story) -> Beat:
-        "Generate a narrator beat for the story"
+    def generate_narrator_text(self, story: Story) -> str:
         pass
 
     @abstractmethod
@@ -87,25 +97,18 @@ class Narrator(ABC):
         pass
 
     @abstractmethod
-    def generate_dm_beat(self, story: Story, results: list[AcceptedAction]) -> Beat:
+    def generate_dm_beat(self, story: Story, results: list[AcceptedAction]) -> str:
         pass
 
     @abstractmethod
-    def evaluate_progress(self, story: Story, alive_user_ids: list[str]) -> ProgressResult:
+    def evaluate_progress(self, story: Story, alive_character_ids: list[str]) -> ProgressResult:
         pass
 
-    def initialise_story(self, seed: str, party: list[dict] | None = None) -> Story:
-        story = Story(
-            exposition=self.generate_exposition(seed, party),
-            beats=[],
-        )
-        story.beats.append(self.generate_narrator_beat(story))
-        return story
-
-    def transition(self, story: Story, user_input: str) -> Story:
-        story.beats.append(Beat(role="player", text=user_input))
-        story.beats.append(self.generate_narrator_beat(story))
-        return story
+    def initialise_story(self, seed: str, party: list[dict] | None = None) -> InitStoryResult:
+        exposition = self.generate_exposition(seed, party)
+        story = Story(exposition=exposition, beats=[])
+        narrator_text = self.generate_narrator_text(story)
+        return InitStoryResult(exposition=exposition, narrator_text=narrator_text)
 
 
 class DummyNarrator(Narrator):
@@ -117,7 +120,7 @@ class DummyNarrator(Narrator):
         if not self._client:
             party_desc = ""
             if party:
-                names = ", ".join(p.get("character_name", "Adventurer") for p in party)
+                names = ", ".join(p.get("name", "Adventurer") for p in party)
                 party_desc = f" The party includes: {names}."
             return Exposition(
                 time="An undefined moment in time",
@@ -126,10 +129,7 @@ class DummyNarrator(Narrator):
                     "The world mostly follows common-sense rules, but bends "
                     "whenever it makes the story more interesting."
                 ),
-                protagonist="A band of adventurers exploring this story space",
-                other_characters=[
-                    p.get("character_name", "An ally") for p in (party or [])
-                ] or ["A shifting cast of characters who appear as needed"],
+                other_characters=["A shifting cast of NPCs who appear as needed"],
                 relationships=[
                     "The party shares a bond forged by circumstance.",
                 ],
@@ -150,23 +150,19 @@ class DummyNarrator(Narrator):
                 foreshadowing=["Unseen possibilities linger just outside focus."],
             )
 
-        party_context = ""
-        if party:
-            party_context = "\n\nParty members:\n" + "\n".join(
-                f"- {p.get('character_name', 'Unknown')}: {p.get('profile', {}).get('summary', 'An adventurer')}"
-                for p in party
-            )
-
+        party_context = _party_lines(party)
         system_prompt = (
             "You are a creative storyteller. Generate a detailed story exposition for a multiplayer adventure. "
             "Return JSON matching the required structure. "
-            "protagonist must be a plain string. "
+            "Do not include a protagonist field. Player characters are provided separately; "
+            "other_characters must list NPCs only. "
             "other_characters, relationships, theme_hints, rules_of_conflict, and foreshadowing "
-            "must be arrays of plain strings, never objects."
+            "must be arrays of plain strings, never objects. "
+            "You may mention party member names in backstory/stakes using their exact provided names."
         )
         user_prompt = (
             f"Generate a story exposition based on this seed: {seed}{party_context}\n\n"
-            "Return JSON with string fields: time, place, world_rules, protagonist, status_quo, "
+            "Return JSON with string fields: time, place, world_rules, status_quo, "
             "backstory, conflict_seed, stakes, tone, genre, inciting_context. "
             "Return string arrays for: other_characters, relationships, theme_hints, "
             "rules_of_conflict, foreshadowing."
@@ -184,21 +180,22 @@ class DummyNarrator(Narrator):
         data = json.loads(response.choices[0].message.content)
         return Exposition(**_normalize_exposition_data(data))
 
-    def generate_narrator_beat(self, story: Story) -> Beat:
+    def generate_narrator_text(self, story: Story) -> str:
         if not self._client:
-            last_player_input = None
+            last_action_text = None
             for beat in reversed(story.beats):
-                if beat.role == "player":
-                    last_player_input = beat.text
+                for action in reversed(beat.actions):
+                    if action.action_type == "act" and action.action_text:
+                        last_action_text = action.action_text
+                        break
+                if last_action_text:
                     break
-            if last_player_input:
-                text = (
-                    f"The party's actions ripple through the scene as they {last_player_input}, "
+            if last_action_text:
+                return (
+                    f"The party's actions ripple through the scene as they {last_action_text}, "
                     "opening new possibilities ahead."
                 )
-            else:
-                text = "The scene settles around the party, waiting for their first decisive move."
-            return Beat(role="narrator", text=text)
+            return "The scene settles around the party, waiting for their first decisive move."
 
         story_json = story.model_dump_json(indent=2)
         system_prompt = (
@@ -214,7 +211,7 @@ class DummyNarrator(Narrator):
             temperature=0.7,
             max_tokens=100,
         )
-        return Beat(role="narrator", text=response.choices[0].message.content.strip())
+        return response.choices[0].message.content.strip()
 
     def adjudicate_action(
         self,
@@ -243,7 +240,7 @@ class DummyNarrator(Narrator):
         )
         user_prompt = (
             f"World rules: {exposition.world_rules}\n"
-            f"Character: {character.get('character_name')} - {character.get('profile', {}).get('summary', '')}\n"
+            f"Character: {character.get('name')} - {character.get('description', '')}\n"
             f"Proposed action: {action_text}\n"
             "Should this action be accepted?"
         )
@@ -259,38 +256,37 @@ class DummyNarrator(Narrator):
         data = json.loads(response.choices[0].message.content)
         return AdjudicationResult(accepted=bool(data.get("accepted")), reason=data.get("reason"))
 
-    def generate_dm_beat(self, story: Story, results: list[AcceptedAction]) -> Beat:
-        for result in results:
-            if result.action_type == "act" and result.action_text:
-                story.beats.append(
-                    Beat(
-                        role="player",
-                        text=result.action_text,
-                        user_id=str(result.user_id),
-                        character_name=result.character_name,
-                    )
-                )
-            elif result.action_type == "pass":
-                story.beats.append(
-                    Beat(
-                        role="player",
-                        text=f"{result.character_name} waits and observes.",
-                        user_id=str(result.user_id),
-                        character_name=result.character_name,
-                    )
-                )
-        return self.generate_narrator_beat(story)
+    def generate_dm_beat(self, story: Story, results: list[AcceptedAction]) -> str:
+        # Caller persists actions; temporarily attach for prompt context
+        from app.models.story import RoundBeat, RoundBeatAction
 
-    def evaluate_progress(self, story: Story, alive_user_ids: list[str]) -> ProgressResult:
-        if not alive_user_ids:
-            return ProgressResult(all_dead=True, arc_phase="end")
+        preview = RoundBeat(
+            round_number=len(story.beats),
+            actions=[
+                RoundBeatAction(
+                    character_id=r.character_id,
+                    character_name=r.character_name,
+                    action_type=r.action_type,
+                    action_text=r.action_text
+                    if r.action_type == "act"
+                    else f"{r.character_name} waits and observes.",
+                )
+                for r in results
+            ],
+            narrator_text="",
+        )
+        story_with_actions = Story(exposition=story.exposition, beats=[*story.beats, preview])
+        return self.generate_narrator_text(story_with_actions)
 
-        beat_count = len(story.beats)
-        if beat_count >= 20:
-            return ProgressResult(mission_complete=True, arc_phase="end")
-        if beat_count >= 10:
-            return ProgressResult(arc_phase="middle")
-        return ProgressResult(arc_phase="beginning")
+    def evaluate_progress(self, story: Story, alive_character_ids: list[str]) -> ProgressResult:
+        if not alive_character_ids:
+            return ProgressResult(all_dead=True)
+
+        # Round 0 is intro; count completed play rounds
+        play_rounds = max(0, len(story.beats) - 1)
+        if play_rounds >= 10:
+            return ProgressResult(mission_complete=True)
+        return ProgressResult()
 
 
 ROUND_RESOLUTION_ERRORS = {

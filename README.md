@@ -51,10 +51,13 @@ See [BIG_CHANGE.md](BIG_CHANGE.md) for the full API contract.
 ### Settings
 - `GET/POST /me/settings/api-keys`, `DELETE /me/settings/api-keys/{id}`
 
+### Characters
+- `POST /characters`, `GET /characters`, `GET/PATCH/DELETE /characters/{id}`
+
 ### Games
 - `POST /games`, `GET /games`, `GET /games/{id}`
 - `POST /games/{id}/join`, `POST /games/{id}/leave`
-- `PATCH /games/{id}/players/me`, `POST /games/{id}/start`
+- `POST /games/{id}/start`
 - `POST /games/{id}/actions`, `POST /games/{id}/retry-resolution`
 
 ## Local development (without Docker)

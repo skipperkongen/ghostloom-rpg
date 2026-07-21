@@ -1,9 +1,10 @@
 """Pydantic models for request/response types and state management."""
 
-from app.models.story import Beat, Role, Story
+from app.models.story import Exposition, RoundBeat, RoundBeatAction, Story
 
 __all__ = [
-    "Role",
-    "Beat",
+    "Exposition",
+    "RoundBeat",
+    "RoundBeatAction",
     "Story",
 ]

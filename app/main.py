@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, games, health, me, settings as settings_router
+from app.routers import auth, characters, games, health, me, settings as settings_router
 
 app = FastAPI(
     title="Ghostloom API",
@@ -24,4 +24,5 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(me.router)
 app.include_router(settings_router.router)
+app.include_router(characters.router)
 app.include_router(games.router)

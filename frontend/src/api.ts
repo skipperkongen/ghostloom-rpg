@@ -80,21 +80,28 @@ export const client = {
     }),
   deleteApiKey: (id: string) =>
     api<void>(`/me/settings/api-keys/${id}`, { method: "DELETE" }),
+  listCharacters: () => api<CharacterDetail[]>("/characters"),
+  createCharacter: (name: string, description: string) =>
+    api<CharacterDetail>("/characters", {
+      method: "POST",
+      body: JSON.stringify({ name, description }),
+    }),
+  deleteCharacter: (id: string) =>
+    api<void>(`/characters/${id}`, { method: "DELETE" }),
   listGames: () =>
     api<Array<{ id: string; seed: string; status: string; phase: string }>>("/games"),
-  createGame: (seed: string, api_key_id: string) =>
+  createGame: (seed: string, api_key_id: string, character_id: string) =>
     api<GameDetail>("/games", {
       method: "POST",
-      body: JSON.stringify({ seed, api_key_id }),
+      body: JSON.stringify({ seed, api_key_id, character_id }),
     }),
   getGame: (id: string) => api<GameDetail>(`/games/${id}`),
-  joinGame: (id: string) => api<GameDetail>(`/games/${id}/join`, { method: "POST" }),
-  leaveGame: (id: string) => api<GameDetail>(`/games/${id}/leave`, { method: "POST" }),
-  updateCharacter: (id: string, character_name: string, answers: Array<{ question_id: string; choice_id: string }>) =>
-    api<GameDetail>(`/games/${id}/players/me`, {
-      method: "PATCH",
-      body: JSON.stringify({ character_name, answers }),
+  joinGame: (id: string, character_id: string) =>
+    api<GameDetail>(`/games/${id}/join`, {
+      method: "POST",
+      body: JSON.stringify({ character_id }),
     }),
+  leaveGame: (id: string) => api<GameDetail>(`/games/${id}/leave`, { method: "POST" }),
   startGame: (id: string) => api<GameDetail>(`/games/${id}/start`, { method: "POST" }),
   submitAction: (id: string, action_type: "act" | "pass", action_text?: string) =>
     api<{ accepted: boolean; reason?: string; game: GameDetail }>(`/games/${id}/actions`, {
@@ -104,6 +111,16 @@ export const client = {
   retryResolution: (id: string) =>
     api<GameDetail>(`/games/${id}/retry-resolution`, { method: "POST" }),
 };
+
+export interface CharacterDetail {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  game_id?: string | null;
+  is_alive: boolean;
+  death_summary?: string | null;
+}
 
 export interface GameDetail {
   id: string;
@@ -119,20 +136,23 @@ export interface GameDetail {
     retryable?: boolean;
   };
   players: Array<{
+    character_id: string;
     user_id: string;
     display_name?: string;
-    character_name?: string;
+    name: string;
+    description: string;
     is_alive: boolean;
     action_submitted: boolean;
-    questionnaire_complete: boolean;
   }>;
-  character_questionnaire?: {
-    questions: Array<{
-      id: string;
-      text: string;
-      choices: Array<{ id: string; label: string }>;
-    }>;
-  };
   exposition?: Record<string, unknown>;
-  beats: Array<{ role: string; text: string; character_name?: string }>;
+  beats: Array<{
+    round_number: number;
+    narrator_text: string;
+    actions: Array<{
+      character_id: string;
+      character_name: string;
+      action_type: string;
+      action_text?: string | null;
+    }>;
+  }>;
 }

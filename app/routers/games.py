@@ -13,8 +13,8 @@ from app.schemas.games import (
     CreateGameRequest,
     GameDetailResponse,
     GameSummaryResponse,
+    JoinGameRequest,
     SubmitActionRequest,
-    UpdateCharacterRequest,
 )
 from app.services.dm_service import resolve_dm_round
 from app.services.game_service import GameError, GameService
@@ -36,12 +36,17 @@ def create_game(
 ) -> GameDetailResponse:
     service = GameService(db)
     try:
-        game = service.create_game(user, req.seed, req.api_key_id)
+        game = service.create_game(user, req.seed, req.api_key_id, req.character_id)
+    except GameError as exc:
+        raise _handle_game_error(exc) from exc
     except Exception as exc:
         from app.services.api_key_service import ApiKeyError
+        from app.services.character_service import CharacterError
 
         if isinstance(exc, ApiKeyError):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if isinstance(exc, CharacterError):
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
         raise
     return service.to_detail(game, user.id)
 
@@ -72,15 +77,22 @@ def get_game(
 @router.post("/{game_id}/join", response_model=GameDetailResponse)
 def join_game(
     game_id: UUID,
+    req: JoinGameRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> GameDetailResponse:
     service = GameService(db)
     try:
-        game = service.join_game(game_id, user)
+        game = service.join_game(game_id, user, req.character_id)
     except (GameError, PhaseError) as exc:
         status_code = exc.status_code if isinstance(exc, GameError) else 409
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        from app.services.character_service import CharacterError
+
+        if isinstance(exc, CharacterError):
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        raise
     return service.to_detail(game, user.id)
 
 
@@ -93,23 +105,6 @@ def leave_game(
     service = GameService(db)
     try:
         game = service.leave_game(game_id, user)
-    except (GameError, PhaseError) as exc:
-        status_code = exc.status_code if isinstance(exc, GameError) else 409
-        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
-    return service.to_detail(game, user.id)
-
-
-@router.patch("/{game_id}/players/me", response_model=GameDetailResponse)
-def update_character(
-    game_id: UUID,
-    req: UpdateCharacterRequest,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> GameDetailResponse:
-    service = GameService(db)
-    answers = [a.model_dump() for a in req.answers]
-    try:
-        game = service.update_character(game_id, user, req.character_name, answers)
     except (GameError, PhaseError) as exc:
         status_code = exc.status_code if isinstance(exc, GameError) else 409
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -170,8 +165,8 @@ def retry_game_resolution(
         game = service.get_game_for_user(game_id, user.id)
         if game.host_user_id != user.id:
             raise GameError("Only the host can retry resolution", 403)
-        assert_phase_allowed(game.phase, ENDPOINT_PHASES["retry_resolution"], "retry_resolution")
-        game.phase = GamePhase.dm_round
+        assert_phase_allowed(game.runtime.phase, ENDPOINT_PHASES["retry_resolution"], "retry_resolution")
+        game.runtime.phase = GamePhase.dm_round
         db.commit()
         background_tasks.add_task(resolve_dm_round, str(game.id), True)
         game = service._load_game(game_id)

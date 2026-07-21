@@ -3,11 +3,14 @@
 from app.db.base import Base
 from app.db.models import (
     ApiKey,
+    Character,
     Game,
-    GamePlayer,
+    GameRuntime,
     PendingAction,
     RoundResolutionFailure,
     Session,
+    StoryBeat,
+    StoryBeatAction,
     User,
 )
 from app.db.session import get_db
@@ -15,11 +18,14 @@ from app.db.session import get_db
 __all__ = [
     "ApiKey",
     "Base",
+    "Character",
     "Game",
-    "GamePlayer",
+    "GameRuntime",
     "PendingAction",
     "RoundResolutionFailure",
     "Session",
+    "StoryBeat",
+    "StoryBeatAction",
     "User",
     "get_db",
 ]

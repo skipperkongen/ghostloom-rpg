@@ -1,6 +1,6 @@
-import { client, GameDetail, getToken, setToken } from "./api";
+import { client, CharacterDetail, GameDetail, getToken, setToken } from "./api";
 
-type View = "login" | "register" | "games" | "settings" | "game";
+type View = "login" | "register" | "games" | "settings" | "characters" | "game";
 
 let currentView: View = "login";
 let currentGameId: string | null = null;
@@ -50,6 +50,7 @@ function render() {
   if (currentView === "login") renderLogin();
   else if (currentView === "register") renderRegister();
   else if (currentView === "settings") renderSettings();
+  else if (currentView === "characters") renderCharacters();
   else if (currentView === "games") renderGames();
   else if (currentView === "game" && currentGameId) renderGame(currentGameId);
 }
@@ -57,6 +58,7 @@ function render() {
 function renderNav(): HTMLElement {
   return el("nav", {}, [
     el("button", { onClick: () => { currentView = "games"; render(); } }, ["Games"]),
+    el("button", { onClick: () => { currentView = "characters"; render(); } }, ["Characters"]),
     el("button", { onClick: () => { currentView = "settings"; render(); } }, ["Settings"]),
     el("button", { className: "secondary", onClick: async () => {
       try { await client.logout(); } catch { /* ignore */ }
@@ -161,12 +163,69 @@ async function renderSettings() {
   try { await refresh(); } catch (e) { showError(card, (e as Error).message); }
 }
 
+async function renderCharacters() {
+  const card = el("div", { className: "card" });
+  card.append(el("h2", {}, ["Characters"]), renderNav());
+  const err = el("div", { className: "error" });
+  const nameInput = el("input", { placeholder: "Name (max 32)" });
+  const descInput = el("textarea", { rows: "4", placeholder: "Describe your character…" });
+  const list = el("div");
+
+  async function refresh() {
+    list.innerHTML = "";
+    const chars = await client.listCharacters();
+    for (const c of chars) {
+      const status = !c.is_alive ? "dead" : c.game_id ? "in game" : "available";
+      list.append(
+        el("div", { className: "player-row" }, [
+          el("span", {}, [`${c.name} (${status}) — ${c.description.slice(0, 60)}`]),
+          el("button", {
+            className: "danger",
+            onClick: async () => {
+              try {
+                await client.deleteCharacter(c.id);
+                await refresh();
+              } catch (e) { showError(card, (e as Error).message); }
+            },
+          }, ["Delete"]),
+        ]),
+      );
+    }
+  }
+
+  card.append(
+    err, list,
+    el("h3", {}, ["Create character"]),
+    el("label", {}, ["Name"]), nameInput,
+    el("label", {}, ["Description"]), descInput,
+    el("button", { onClick: async () => {
+      try {
+        await client.createCharacter(
+          (nameInput as HTMLInputElement).value,
+          (descInput as HTMLTextAreaElement).value,
+        );
+        (nameInput as HTMLInputElement).value = "";
+        (descInput as HTMLTextAreaElement).value = "";
+        await refresh();
+      } catch (e) { showError(card, (e as Error).message); }
+    }}, ["Create"]),
+  );
+  app.append(card);
+  try { await refresh(); } catch (e) { showError(card, (e as Error).message); }
+}
+
+function availableCharacters(chars: CharacterDetail[]): CharacterDetail[] {
+  return chars.filter((c) => c.is_alive && !c.game_id);
+}
+
 async function renderGames() {
   const card = el("div", { className: "card" });
   card.append(el("h2", {}, ["Your Games"]), renderNav());
   const err = el("div", { className: "error" });
   const seed = el("input", { placeholder: "Story seed" });
   const keySelect = el("select");
+  const createCharSelect = el("select");
+  const joinCharSelect = el("select");
   const list = el("div");
   const joinId = el("input", { placeholder: "Game ID to join" });
 
@@ -184,8 +243,14 @@ async function renderGames() {
     const keys = await client.listApiKeys();
     keySelect.innerHTML = "";
     for (const k of keys) {
-      const opt = el("option", { value: k.id }, [`openai ••••${k.last_four}`]);
-      keySelect.append(opt);
+      keySelect.append(el("option", { value: k.id }, [`openai ••••${k.last_four}`]));
+    }
+    const chars = availableCharacters(await client.listCharacters());
+    createCharSelect.innerHTML = "";
+    joinCharSelect.innerHTML = "";
+    for (const c of chars) {
+      createCharSelect.append(el("option", { value: c.id }, [c.name]));
+      joinCharSelect.append(el("option", { value: c.id }, [c.name]));
     }
   }
 
@@ -194,9 +259,14 @@ async function renderGames() {
     el("h3", {}, ["Create game"]),
     el("label", {}, ["Seed"]), seed,
     el("label", {}, ["API key"]), keySelect,
+    el("label", {}, ["Character"]), createCharSelect,
     el("button", { onClick: async () => {
       try {
-        const game = await client.createGame((seed as HTMLInputElement).value, (keySelect as HTMLSelectElement).value);
+        const game = await client.createGame(
+          (seed as HTMLInputElement).value,
+          (keySelect as HTMLSelectElement).value,
+          (createCharSelect as HTMLSelectElement).value,
+        );
         currentGameId = game.id;
         currentView = "game";
         render();
@@ -204,9 +274,13 @@ async function renderGames() {
     }}, ["Create"]),
     el("h3", {}, ["Join game"]),
     joinId,
+    el("label", {}, ["Character"]), joinCharSelect,
     el("button", { onClick: async () => {
       try {
-        const game = await client.joinGame((joinId as HTMLInputElement).value.trim());
+        const game = await client.joinGame(
+          (joinId as HTMLInputElement).value.trim(),
+          (joinCharSelect as HTMLSelectElement).value,
+        );
         currentGameId = game.id;
         currentView = "game";
         render();
@@ -232,7 +306,7 @@ async function renderGame(gameId: string) {
     const myPlayer = game.players.find((p) => p.user_id === me?.id);
     for (const p of game.players) {
       content.append(el("div", { className: "player-row" }, [
-        el("span", {}, [`${p.character_name || p.display_name || p.user_id.slice(0, 8)} ${p.is_alive ? "" : "(dead)"} ${p.action_submitted ? "✓" : ""}`]),
+        el("span", {}, [`${p.name} ${p.is_alive ? "" : "(dead)"} ${p.action_submitted ? "✓" : ""}`]),
       ]));
     }
 
@@ -252,8 +326,16 @@ async function renderGame(gameId: string) {
     if (game.beats.length) {
       content.append(el("h3", {}, ["Story"]));
       for (const beat of game.beats) {
-        const prefix = beat.character_name ? `${beat.character_name}: ` : "";
-        content.append(el("div", { className: `beat ${beat.role}` }, [`${prefix}${beat.text}`]));
+        content.append(el("div", { className: "beat round" }, [
+          el("strong", {}, [`Round ${beat.round_number}`]),
+        ]));
+        for (const action of beat.actions) {
+          const text = action.action_type === "pass"
+            ? `${action.character_name} passes`
+            : `${action.character_name}: ${action.action_text || ""}`;
+          content.append(el("div", { className: "beat player" }, [text]));
+        }
+        content.append(el("div", { className: "beat narrator" }, [beat.narrator_text]));
       }
     }
 
@@ -277,44 +359,16 @@ async function renderGame(gameId: string) {
 }
 
 function renderLobby(container: HTMLElement, game: GameDetail, errEl: Element) {
-  const q = game.character_questionnaire;
-  if (!q) return;
-  const nameInput = el("input", { placeholder: "Character name" });
-  const answers: Record<string, string> = {};
-
-  for (const question of q.questions) {
-    const select = el("select");
-    for (const c of question.choices) {
-      select.append(el("option", { value: c.id }, [c.label]));
-      answers[question.id] = c.id;
-    }
-    select.addEventListener("change", () => { answers[question.id] = (select as HTMLSelectElement).value; });
-    container.append(el("label", {}, [question.text]), select);
+  for (const p of game.players) {
+    container.append(el("p", { className: "muted" }, [`${p.name}: ${p.description.slice(0, 120)}`]));
   }
-
-  container.append(
-    el("label", {}, ["Character name"]), nameInput,
-    el("button", { onClick: async () => {
-      try {
-        await client.updateCharacter(
-          game.id,
-          (nameInput as HTMLInputElement).value,
-          Object.entries(answers).map(([question_id, choice_id]) => ({ question_id, choice_id })),
-        );
-        const updated = await client.getGame(game.id);
-        if (updated.host_user_id === me?.id) {
-          await client.startGame(game.id);
-        }
-        location.reload();
-      } catch (e) { (errEl as HTMLElement).textContent = (e as Error).message; }
-    }}, [game.host_user_id === me?.id ? "Save & Start (host)" : "Save character"]),
-  );
-
   if (game.host_user_id === me?.id) {
     container.append(el("button", { onClick: async () => {
       try { await client.startGame(game.id); location.reload(); }
       catch (e) { (errEl as HTMLElement).textContent = (e as Error).message; }
     }}, ["Start game"]));
+  } else {
+    container.append(el("p", {}, ["Waiting for host to start…"]));
   }
 }
 

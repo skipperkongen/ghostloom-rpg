@@ -18,7 +18,6 @@ ENDPOINT_PHASES: dict[str, set[GamePhase]] = {
         GamePhase.dm_round,
         GamePhase.resolution_failed,
     },
-    "update_character": {GamePhase.lobby},
     "start": {GamePhase.lobby},
     "actions": {GamePhase.player_round},
     "retry_resolution": {GamePhase.resolution_failed},
